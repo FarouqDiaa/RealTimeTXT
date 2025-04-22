@@ -17,7 +17,13 @@ public class CRDTItem {
         this.value = value;
         this.children = new ArrayList<>();
     }
-    
+
+    public CRDTItem(CRDTItem parent, String value, UUID uuid) {
+        this.parent = parent;
+        this.value = value;
+        this.uuid = uuid;
+        this.children = new ArrayList<>();
+    }
     public UUID getId() {
         return uuid;
     }

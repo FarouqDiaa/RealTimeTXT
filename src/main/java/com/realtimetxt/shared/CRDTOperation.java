@@ -10,13 +10,23 @@ public class CRDTOperation {
     private int userId;
     private OperationType operation;
     private String value = null;
-    private UUID parent = null;
+    private UUID parentId = null;
+    private UUID itemId = null;
 
-    public CRDTOperation(int userId, OperationType operation, String value, UUID parent) {
+    public CRDTOperation(int userId, OperationType operation, String value, UUID parentId) {
         this.userId = userId;
         this.operation = operation;
         this.value = value;
-        this.parent = parent;
+        this.parentId = parentId;
+        this.itemId = UUID.randomUUID();
+    }
+
+    public CRDTOperation(int userId, OperationType operation, String value, UUID parentId, UUID itemId) {
+        this.userId = userId;
+        this.operation = operation;
+        this.value = value;
+        this.parentId = parentId;
+        this.itemId = itemId;
     }
 
     public UUID getId() {
@@ -31,8 +41,12 @@ public class CRDTOperation {
         return userId;
     }
 
-    public UUID getParent() {
-        return parent;
+    public UUID getParentId() {
+        return parentId;
+    }
+
+    public UUID getItemId() {
+        return itemId;
     }
 
     public String getValue() {

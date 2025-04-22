@@ -2,21 +2,32 @@ package com.realtimetxt.client.logic;
 
 import java.util.UUID;
 
+import com.realtimetxt.shared.CRDTOperation;
 import com.realtimetxt.shared.enums.OperationType;
-import com.realtimetxt.shared.exceptions.NotImplementedException;
 
 public class CRDT {
-        private CRDTItem root;
+    private CRDTItem root;
 
     public CRDT(CRDTItem root) {
+        this.root = root;
     }
 
     public CRDTItem findCrItem(UUID itemId) {
+        if (root == null) {
+            return null;
+        }
         return _findCrItem(root, itemId);
     }
 
-    public void newOperation(OperationType operation) {
-        throw new NotImplementedException();
+    public void newOperation(CRDTOperation operation) {
+        if (operation.getOperation() == OperationType.INSERT) {
+            CRDTItem parent = findCrItem(operation.getParentId());
+            CRDTItem newItem = new CRDTItem(parent, operation.getValue(), operation.getItemId());
+            parent.addChild(newItem);
+        } else if (operation.getOperation() == OperationType.DELETE) {
+            CRDTItem itemToDelete = findCrItem(operation.getItemId());
+            itemToDelete.setDeleted(true);
+        }
     }
 
     private CRDTItem _findCrItem(CRDTItem root, UUID itemId) {
@@ -25,8 +36,9 @@ public class CRDT {
         }
 
         for (CRDTItem item : root.getChildren()) {
-            if (_findCrItem(item, itemId) != null) {
-                return item;
+            CRDTItem foundItem = _findCrItem(item, itemId);
+            if (foundItem != null) {
+                return foundItem;
             }
         }
 
