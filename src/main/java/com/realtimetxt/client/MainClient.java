@@ -1,6 +1,6 @@
-package client;
+package com.realtimetxt.client;
 
-import client.ui.EditorUI;
+import com.realtimetxt.client.ui.EditorUI;
 
 public class MainClient {
     public static void main(String[] args) {

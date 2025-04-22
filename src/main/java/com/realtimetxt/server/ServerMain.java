@@ -1,4 +1,4 @@
-package server;
+package com.realtimetxt.server;
 
 public class ServerMain {
     public static void main(String[] args) {

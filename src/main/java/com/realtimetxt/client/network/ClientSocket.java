@@ -1,7 +1,7 @@
-package client.network;
+package com.realtimetxt.client.network;
 
+import java.io.IOException;
 import java.net.Socket;
-import java.io.*;
 
 public class ClientSocket {
     private Socket socket;

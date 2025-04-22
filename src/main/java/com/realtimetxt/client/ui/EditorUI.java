@@ -1,4 +1,4 @@
-package client.ui;
+package com.realtimetxt.client.ui;
 
 public class EditorUI {
     public void initialize() {
