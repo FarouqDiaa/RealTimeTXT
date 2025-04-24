@@ -1,0 +1,13 @@
+com\realtimetxt\Main.class
+com\realtimetxt\shared\exceptions\NotImplementedException.class
+com\realtimetxt\shared\CRDTOperation.class
+com\realtimetxt\client\logic\CRDTItem.class
+com\realtimetxt\server\SessionManager.class
+com\realtimetxt\shared\enums\OperationType.class
+com\realtimetxt\client\MainClient.class
+com\realtimetxt\shared\Document.class
+com\realtimetxt\server\ServerMain.class
+com\realtimetxt\shared\User.class
+com\realtimetxt\client\network\ClientSocket.class
+com\realtimetxt\client\logic\CRDT.class
+com\realtimetxt\client\ui\EditorUI.class
