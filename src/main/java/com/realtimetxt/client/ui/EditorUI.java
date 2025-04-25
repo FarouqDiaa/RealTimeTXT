@@ -4,27 +4,30 @@ import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
+import javafx.scene.input.Clipboard;
+import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 
 import java.io.*;
-import java.util.*;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class EditorUI {
+
     private Stage primaryStage;
     private TextArea textArea;
-    // A map to hold remote cursors with userId as key and UserCaret as value
-    private Map<String, UserCaret> remoteCursors = new ConcurrentHashMap<>();
+    private VBox userListBox;
+    private Label viewerCodeLabel;
+    private Label editorCodeLabel;
 
     private String viewerCode = "#yq1xrx";
     private String editorCode = "#1jEo2K";
     private String currentUser = "Anonymous Frog";
-    private VBox userListBox;
-    private Label viewerCodeLabel;
-    private Label editorCodeLabel;
+
+    private final Map<String, UserCaret> remoteCursors = new ConcurrentHashMap<>();
 
     public EditorUI(Stage stage) {
         this.primaryStage = stage;
@@ -33,131 +36,153 @@ public class EditorUI {
 
     private void initUI() {
         primaryStage.setTitle("Realtime Text Editor");
-        BorderPane borderPane = new BorderPane();
 
-        HBox toolbar = createToolbar();
-        borderPane.setTop(toolbar);
+        BorderPane root = new BorderPane();
+        root.setTop(createMenuBar());
+        root.setCenter(createEditorArea());
+        root.setLeft(createSidebar());
 
+        Scene scene = new Scene(root, 800, 600);
+        primaryStage.setScene(scene);
+    }
+
+    // ──────────────────────────────── Menu Bar (Collaboration & File)
+    // ────────────────────────────────
+    private MenuBar createMenuBar() {
+        MenuBar menuBar = new MenuBar();
+
+        // File Menu
+        Menu fileMenu = new Menu("File");
+        MenuItem importItem = new MenuItem("Import");
+        MenuItem exportItem = new MenuItem("Export");
+        importItem.setOnAction(e -> importFile());
+        exportItem.setOnAction(e -> exportFile());
+        fileMenu.getItems().addAll(importItem, exportItem);
+
+        // Edit Menu (Undo/Redo)
+        Menu editMenu = new Menu("Edit");
+        MenuItem undoItem = new MenuItem("Undo");
+        MenuItem redoItem = new MenuItem("Redo");
+        undoItem.setOnAction(e -> showNotification("Undo action triggered."));
+        redoItem.setOnAction(e -> showNotification("Redo action triggered."));
+        editMenu.getItems().addAll(undoItem, redoItem);
+
+        // Collaboration Menu
+        Menu collabMenu = new Menu("Collaboration");
+        MenuItem requestCodesItem = new MenuItem("Request Session Codes");
+        MenuItem joinSessionItem = new MenuItem("Join Collaboration");
+
+        requestCodesItem.setOnAction(e -> {
+            showNotification("Requested session codes from server.");
+        });
+
+        joinSessionItem.setOnAction(e -> showJoinSessionDialog());
+        collabMenu.getItems().addAll(requestCodesItem, joinSessionItem);
+
+        menuBar.getMenus().addAll(fileMenu, editMenu, collabMenu);
+        return menuBar;
+    }
+
+    private void showJoinSessionDialog() {
+        TextInputDialog dialog = new TextInputDialog();
+        dialog.setTitle("Join Collaboration");
+        dialog.setHeaderText("Enter the session code:");
+        dialog.setContentText("Session Code:");
+
+        dialog.showAndWait().ifPresent(code -> {
+            showNotification("Joined session with code: " + code);
+            // Placeholder: pass code to collaboration logic
+        });
+    }
+
+    // ──────────────────────────────── Editor Area ────────────────────────────────
+    private StackPane createEditorArea() {
         StackPane editorPane = new StackPane();
         textArea = new TextArea();
         textArea.setStyle("-fx-font-family: monospace; -fx-font-size: 14px;");
 
         textArea.textProperty().addListener((obs, oldText, newText) -> updateRemoteCursors());
         textArea.caretPositionProperty().addListener((obs, oldPos, newPos) -> {
-            // Send caret position to server (to be implemented by backend)
+            // TODO: Send caret position to backend server
         });
 
         editorPane.getChildren().add(textArea);
-        borderPane.setCenter(editorPane);
-
-        VBox sidebar = createSidebar();
-        borderPane.setLeft(sidebar);
-
-        Scene scene = new Scene(borderPane, 800, 600);
-        primaryStage.setScene(scene);
+        return editorPane;
     }
 
-    private HBox createToolbar() {
-        HBox toolbar = new HBox(10);
-        toolbar.setPadding(new Insets(10));
-        toolbar.setStyle("-fx-background-color: #f4f4f4;");
-
-        Button backButton = new Button("←");
-        Button forwardButton = new Button("→");
-        Button exportButton = new Button("Export");
-        exportButton.setOnAction(e -> exportFile());
-
-        toolbar.getChildren().addAll(backButton, forwardButton, exportButton);
-        return toolbar;
-    }
-
+    // ──────────────────────────────── Sidebar ────────────────────────────────
     private VBox createSidebar() {
         VBox sidebar = new VBox(20);
         sidebar.setPadding(new Insets(15));
-        sidebar.setPrefWidth(200);
+        sidebar.setPrefWidth(220);
         sidebar.setStyle("-fx-background-color: #f8f8f8;");
 
-        Label viewerHeader = new Label("Viewer Code");
-        viewerHeader.setStyle("-fx-font-weight: bold; -fx-font-size: 16px;");
-
-        HBox viewerCodeBox = new HBox(10);
-        viewerCodeLabel = new Label(viewerCode);
-        viewerCodeLabel.setStyle("-fx-background-color: #f0f0f0; -fx-padding: 5px 10px;");
+        // Viewer Code Section
+        Label viewerHeader = createHeaderLabel("Viewer Code");
+        viewerCodeLabel = createCodeLabel(viewerCode);
         Button copyViewerButton = new Button("Copy");
         copyViewerButton.setOnAction(e -> copyToClipboard(viewerCode));
-        viewerCodeBox.getChildren().addAll(viewerCodeLabel, copyViewerButton);
+        HBox viewerBox = new HBox(10, viewerCodeLabel, copyViewerButton);
 
-        Label editorHeader = new Label("Editor Code");
-        editorHeader.setStyle("-fx-font-weight: bold; -fx-font-size: 16px;");
-
-        HBox editorCodeBox = new HBox(10);
-        editorCodeLabel = new Label(editorCode);
-        editorCodeLabel.setStyle("-fx-background-color: #f0f0f0; -fx-padding: 5px 10px;");
+        // Editor Code Section
+        Label editorHeader = createHeaderLabel("Editor Code");
+        editorCodeLabel = createCodeLabel(editorCode);
         Button copyEditorButton = new Button("Copy");
         copyEditorButton.setOnAction(e -> copyToClipboard(editorCode));
-        editorCodeBox.getChildren().addAll(editorCodeLabel, copyEditorButton);
+        HBox editorBox = new HBox(10, editorCodeLabel, copyEditorButton);
 
-        Label usersHeader = new Label("Active Users");
-        usersHeader.setStyle("-fx-font-weight: bold; -fx-font-size: 16px;");
-
+        // Active Users Section
+        Label usersHeader = createHeaderLabel("Active Users");
         userListBox = new VBox(5);
         updateUserList();
 
         sidebar.getChildren().addAll(
-                viewerHeader, viewerCodeBox,
-                editorHeader, editorCodeBox,
+                viewerHeader, viewerBox,
+                editorHeader, editorBox,
                 usersHeader, userListBox);
 
         return sidebar;
     }
 
-    private void updateUserList() {
-        userListBox.getChildren().clear();
+    private Label createHeaderLabel(String text) {
+        Label label = new Label(text);
+        label.setStyle("-fx-font-weight: bold; -fx-font-size: 16px;");
+        return label;
+    }
 
-        HBox currentUserBox = new HBox(5);
-        Label userLabel = new Label(currentUser + " (you)");
-        userLabel.setTextFill(Color.DARKGREEN);
-        currentUserBox.getChildren().add(userLabel);
-        userListBox.getChildren().add(currentUserBox);
+    private Label createCodeLabel(String text) {
+        Label label = new Label(text);
+        label.setStyle("-fx-background-color: #f0f0f0; -fx-padding: 5px 10px;");
+        return label;
+    }
 
-        for (Map.Entry<String, UserCaret> entry : remoteCursors.entrySet()) {
-            String userId = entry.getKey();
-            UserCaret caret = entry.getValue();
-            int lineNumber = getLineNumber(caret.getPosition());
+    // ──────────────────────────────── File Import/Export
+    // ────────────────────────────────
+    private void importFile() {
+        FileChooser fileChooser = new FileChooser();
+        fileChooser.setTitle("Import Document");
+        fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Text Files", "*.txt"));
+        File file = fileChooser.showOpenDialog(primaryStage);
 
-            HBox userBox = new HBox(5);
-            Label userLabelRemote = new Label(userId + " - line " + lineNumber);
-            userLabelRemote.setTextFill(caret.getColor());
-
-            userBox.getChildren().add(userLabelRemote);
-            userListBox.getChildren().add(userBox);
+        if (file != null) {
+            try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+                StringBuilder content = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    content.append(line).append("\n");
+                }
+                textArea.setText(content.toString());
+                showNotification("File imported successfully!");
+            } catch (IOException e) {
+                showAlert("Error reading file: " + e.getMessage());
+            }
         }
-    }
-
-    private int getLineNumber(int position) {
-        String text = textArea.getText();
-        if (position > text.length())
-            position = text.length();
-        return (int) text.substring(0, position).chars().filter(ch -> ch == '\n').count() + 1;
-    }
-
-    private void copyToClipboard(String text) {
-        javafx.scene.input.Clipboard clipboard = javafx.scene.input.Clipboard.getSystemClipboard();
-        javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
-        content.putString(text);
-        clipboard.setContent(content);
-        showNotification("Copied to clipboard!");
-    }
-
-    private void showNotification(String message) {
-        System.out.println(message);
     }
 
     private void exportFile() {
         FileChooser fileChooser = new FileChooser();
         fileChooser.setTitle("Export Document");
-        fileChooser.getExtensionFilters().add(
-                new FileChooser.ExtensionFilter("Text Files", "*.txt"));
+        fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Text Files", "*.txt"));
         File file = fileChooser.showSaveDialog(primaryStage);
 
         if (file != null) {
@@ -170,14 +195,28 @@ public class EditorUI {
         }
     }
 
+    // ──────────────────────────────── Utility ────────────────────────────────
+    private void showNotification(String message) {
+        System.out.println(message);
+    }
+
     private void showAlert(String message) {
         Alert alert = new Alert(Alert.AlertType.ERROR);
         alert.setTitle("Error");
-        alert.setHeaderText(null);
         alert.setContentText(message);
         alert.showAndWait();
     }
 
+    private void copyToClipboard(String text) {
+        Clipboard clipboard = Clipboard.getSystemClipboard();
+        ClipboardContent content = new ClipboardContent();
+        content.putString(text);
+        clipboard.setContent(content);
+        showNotification("Copied to clipboard!");
+    }
+
+    // ──────────────────────────────── Remote Cursor & User List
+    // ────────────────────────────────
     public void addRemoteCursor(String userId, int position, Color color) {
         Platform.runLater(() -> {
             remoteCursors.put(userId, new UserCaret(position, color));
@@ -194,11 +233,32 @@ public class EditorUI {
     }
 
     private void updateRemoteCursors() {
-
-        // Visual representation of remote cursors (e.g., highlights or colored carets)
-        // Backend sync and rendering not implemented in this UI stub
+        // TODO: Implement remote caret rendering in the TextArea
     }
 
+    private void updateUserList() {
+        userListBox.getChildren().clear();
+
+        Label youLabel = new Label(currentUser + " (you)");
+        youLabel.setTextFill(Color.DARKGREEN);
+        userListBox.getChildren().add(new HBox(5, youLabel));
+
+        remoteCursors.forEach((userId, caret) -> {
+            int line = getLineNumber(caret.getPosition());
+            Label label = new Label(userId + " - line " + line);
+            label.setTextFill(caret.getColor());
+            userListBox.getChildren().add(new HBox(5, label));
+        });
+    }
+
+    private int getLineNumber(int position) {
+        String text = textArea.getText();
+        position = Math.min(position, text.length());
+        return (int) text.substring(0, position).chars().filter(ch -> ch == '\n').count() + 1;
+    }
+
+    // ──────────────────────────────── Text Updates & Codes
+    // ────────────────────────────────
     public void updateText(String newText, boolean preserveCaret) {
         Platform.runLater(() -> {
             int caretPosition = textArea.getCaretPosition();
@@ -223,9 +283,11 @@ public class EditorUI {
         Platform.runLater(() -> editorCodeLabel.setText(code));
     }
 
+    // ──────────────────────────────── UserCaret Inner Class
+    // ────────────────────────────────
     private static class UserCaret {
         private int position;
-        private Color color;
+        private final Color color;
 
         public UserCaret(int position, Color color) {
             this.position = position;
@@ -236,12 +298,12 @@ public class EditorUI {
             return position;
         }
 
-        public Color getColor() {
-            return color;
-        }
-
         public void setPosition(int position) {
             this.position = position;
+        }
+
+        public Color getColor() {
+            return color;
         }
     }
 }
