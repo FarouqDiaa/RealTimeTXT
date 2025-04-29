@@ -11,7 +11,7 @@ public class CRDTItem {
     private String value;
     private Boolean isDeleted = false;
     private List<CRDTItem> children;
-    
+
     public CRDTItem(CRDTItem parent, String value) {
         this.parent = parent;
         this.value = value;
@@ -24,6 +24,7 @@ public class CRDTItem {
         this.uuid = uuid;
         this.children = new ArrayList<>();
     }
+
     public UUID getId() {
         return uuid;
     }
@@ -53,6 +54,12 @@ public class CRDTItem {
     }
 
     public void addChild(CRDTItem child) {
+        for (CRDTItem item : children) {
+            if (child.getTimestamp() >= item.getTimestamp()) {
+                children.add(children.indexOf(item), child);
+                return;
+            }
+        }
         children.add(child);
     }
 
