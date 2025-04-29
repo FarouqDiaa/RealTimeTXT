@@ -15,6 +15,8 @@ import java.io.*;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+import com.realtimetxt.client.logic.CRDTController;
+
 public class EditorUI {
 
     private Stage primaryStage;
@@ -26,6 +28,8 @@ public class EditorUI {
     private String viewerCode = "#yq1xrx";
     private String editorCode = "#1jEo2K";
     private String currentUser = "Anonymous Frog";
+
+    private final CRDTController crdtController = new CRDTController();
 
     private final Map<String, UserCaret> remoteCursors = new ConcurrentHashMap<>();
 
@@ -101,7 +105,10 @@ public class EditorUI {
         textArea = new TextArea();
         textArea.setStyle("-fx-font-family: monospace; -fx-font-size: 14px;");
 
-        textArea.textProperty().addListener((obs, oldText, newText) -> updateRemoteCursors());
+        textArea.textProperty().addListener((obs, oldText, newText) -> {
+            updateRemoteCursors();
+            crdtController.textChanged(newText, textArea.getCaretPosition());
+        });
         textArea.caretPositionProperty().addListener((obs, oldPos, newPos) -> {
             // TODO: Send caret position to backend server
         });
