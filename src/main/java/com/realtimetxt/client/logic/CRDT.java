@@ -12,6 +12,14 @@ public class CRDT {
         this.root = root;
     }
 
+    public CRDT() {
+        this.root = new CRDTItem(null, "", UUID.randomUUID());
+    }
+
+    public CRDTItem getRoot() {
+        return root;
+    }
+
     public CRDTItem findCrItem(UUID itemId) {
         if (root == null) {
             return null;
