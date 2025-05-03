@@ -2,22 +2,19 @@ package com.realtimetxt.server;
 
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentSkipListSet;
 
 public class SessionManager {
 
-    private final Map<String, String> codeOfDocument = new HashMap<>();
-
-    private final Map<String, String> codeOfRole = new HashMap<>();
-
-    private final Map<String, Set<String>> documentsUsers = new HashMap<>();
-
-    private final Map<String, String> usersDocument = new HashMap<>();
-
-    private final Map<String, String> usersRoles = new HashMap<>();
+    private final Map<String, String> codeOfDocument = new ConcurrentHashMap<>();
+    private final Map<String, String> codeOfRole = new ConcurrentHashMap<>();
+    private final Map<String, Set<String>> documentsUsers = new ConcurrentHashMap<>();
+    private final Map<String, Set<String>> usersDocuments = new ConcurrentHashMap<>();
+    private final Map<String, Map<String, String>> usersRoles = new ConcurrentHashMap<>();
 
     public Map<String, String> createSession(String documentId) {
         String editorCode = generateUniqueCode();
@@ -43,39 +40,48 @@ public class SessionManager {
         String docId = codeOfDocument.get(code);
         String role = codeOfRole.get(code);
 
-        documentsUsers.putIfAbsent(docId, new HashSet<>());
-        documentsUsers.get(docId).add(userId);
+        documentsUsers.computeIfAbsent(docId, k -> new ConcurrentSkipListSet<>()).add(userId);
+        usersDocuments.computeIfAbsent(userId, k -> new ConcurrentSkipListSet<>()).add(docId);
 
-        usersDocument.put(userId, docId);
-        usersRoles.put(userId, role);
+        usersRoles.computeIfAbsent(userId, k -> new ConcurrentHashMap<>()).put(docId, role);
+
         return true;
     }
 
-    public void leaveSession(String userId) {
-        String docId = usersDocument.get(userId);
-        if (docId == null) {
-            return;
-        }
-
-        Set<String> users = documentsUsers.get(docId);
+    public void leaveSession(String userId, String documentId) {
+        Set<String> users = documentsUsers.get(documentId);
         if (users != null) {
             users.remove(userId);
             if (users.isEmpty()) {
-                documentsUsers.remove(docId);
-                System.out.println("Session for document " + docId + " removed as it is empty");
+                documentsUsers.remove(documentId);
+                System.out.println("Session for document " + documentId + " removed as it is empty");
             }
         }
 
-        usersDocument.remove(userId);
-        usersRoles.remove(userId);
+        Set<String> docs = usersDocuments.get(userId);
+        if (docs != null) {
+            docs.remove(documentId);
+            if (docs.isEmpty()) {
+                usersDocuments.remove(userId);
+            }
+        }
+
+        Map<String, String> roles = usersRoles.get(userId);
+        if (roles != null) {
+            roles.remove(documentId);
+            if (roles.isEmpty()) {
+                usersRoles.remove(userId);
+            }
+        }
     }
 
-    public String getUserRole(String userId) {
-        return usersRoles.get(userId);
+    public String getUserRole(String userId, String documentId) {
+        Map<String, String> roles = usersRoles.get(userId);
+        return roles != null ? roles.get(documentId) : null;
     }
 
-    public String getUserDocument(String userId) {
-        return usersDocument.get(userId);
+    public Set<String> getUserDocuments(String userId) {
+        return usersDocuments.getOrDefault(userId, Collections.emptySet());
     }
 
     public Set<String> getUsersInDocument(String documentId) {
@@ -90,7 +96,7 @@ public class SessionManager {
         return code;
     }
 
-    public boolean isValidCode(String code) {
+    public boolean isValidDocument(String code) {
         return codeOfDocument.containsKey(code);
     }
 
