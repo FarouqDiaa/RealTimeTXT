@@ -25,9 +25,9 @@ public class EditorUI {
     private Label viewerCodeLabel;
     private Label editorCodeLabel;
 
-    private String viewerCode = "#yq1xrx";
-    private String editorCode = "#1jEo2K";
-    private String currentUser = "Anonymous Frog";
+    private String viewerCode = "";
+    private String editorCode = "";
+    private String currentUser = "";
 
     private final CRDTController crdtController = new CRDTController();
 
@@ -35,6 +35,17 @@ public class EditorUI {
 
     public EditorUI(Stage stage) {
         this.primaryStage = stage;
+
+        // Prompt user for their name
+        TextInputDialog dialog = new TextInputDialog("Anonymous Frog");
+        dialog.setTitle("Enter Your Name");
+        dialog.setHeaderText("Welcome to RealTimeTXT");
+        dialog.setContentText("Please enter your name:");
+
+        dialog.showAndWait().ifPresent(name -> {
+            currentUser = name;
+        });
+
         initUI();
     }
 
@@ -52,6 +63,23 @@ public class EditorUI {
 
     // ──────────────────────────────── Menu Bar (Collaboration & File)
     // ────────────────────────────────
+    private String fetchViewerCodeFromServer() {
+        // Simulate fetching viewer code from the server
+        // TODO : Implement actual server call to fetch viewer code
+        // For now, iam return a hardcoded value
+        // return clientSocket.requestSessionCode("viewer"); //copilot suggest me this
+
+        return "#newViewerCode"; // this is a placeholder
+    }
+
+    private String fetchEditorCodeFromServer() {
+        // Simulate fetching editor code from the server
+        // TODO : Implement actual server call to fetch editor code
+        // For now, iam return a hardcoded value
+        // return clientSocket.requestSessionCode("editor"); //copilot suggest me this
+        return "#newEditorCode"; // this is a placeholder
+    }
+
     private MenuBar createMenuBar() {
         MenuBar menuBar = new MenuBar();
 
@@ -67,8 +95,12 @@ public class EditorUI {
         Menu editMenu = new Menu("Edit");
         MenuItem undoItem = new MenuItem("Undo");
         MenuItem redoItem = new MenuItem("Redo");
-        undoItem.setOnAction(e -> showNotification("Undo action triggered."));
-        redoItem.setOnAction(e -> showNotification("Redo action triggered."));
+        undoItem.setOnAction(e -> {
+            // TODO: Implement undo action
+        });
+        redoItem.setOnAction(e -> {
+            // TODO: Implement redo action
+        });
         editMenu.getItems().addAll(undoItem, redoItem);
 
         // Collaboration Menu
@@ -77,9 +109,15 @@ public class EditorUI {
         MenuItem joinSessionItem = new MenuItem("Join Collaboration");
 
         requestCodesItem.setOnAction(e -> {
-            showNotification("Requested session codes from server.");
-        });
+            // Simulate fetching session codes from the server
+            String fetchedViewerCode = fetchViewerCodeFromServer();
+            String fetchedEditorCode = fetchEditorCodeFromServer();
 
+            setViewerCode(fetchedViewerCode);
+            setEditorCode(fetchedEditorCode);
+
+            showNotification("Session codes updated!");
+        });
         joinSessionItem.setOnAction(e -> showJoinSessionDialog());
         collabMenu.getItems().addAll(requestCodesItem, joinSessionItem);
 
@@ -96,6 +134,7 @@ public class EditorUI {
         dialog.showAndWait().ifPresent(code -> {
             showNotification("Joined session with code: " + code);
             // Placeholder: pass code to collaboration logic
+            // TODO: Implement actual join session logic
         });
     }
 
@@ -262,12 +301,11 @@ public class EditorUI {
     }
 
     private void updateRemoteCursors() {
-        // TODO: Implement remote caret rendering in the TextArea
+        // TODO: Update the remote cursors in the text area
     }
 
     private void updateUserList() {
         userListBox.getChildren().clear();
-
         Label youLabel = new Label(currentUser + " (you)");
         youLabel.setTextFill(Color.DARKGREEN);
         userListBox.getChildren().add(new HBox(5, youLabel));
@@ -281,9 +319,11 @@ public class EditorUI {
     }
 
     private int getLineNumber(int position) {
-        String text = textArea.getText();
-        position = Math.min(position, text.length());
-        return (int) text.substring(0, position).chars().filter(ch -> ch == '\n').count() + 1;
+        String text = textArea.getText(); // Get the all text from the TextArea
+        position = Math.min(position, text.length()); // Ensure position is within bounds
+        return (int) text.substring(0, position).chars().filter(ch -> ch == '\n').count() + 1; // Count the number of
+                                                                                               // newlines before the
+                                                                                               // position
     }
 
     // ──────────────────────────────── Text Updates & Codes
@@ -314,24 +354,25 @@ public class EditorUI {
 
     // ──────────────────────────────── UserCaret Inner Class
     // ────────────────────────────────
-    private int position;
-    private final Color color;
+    public static class UserCaret {
+        private int position;
+        private final Color color;
 
-    public UserCaret(int position, Color color) {
-        this.position = position;
-        this.color = color;
-    }
+        public UserCaret(int position, Color color) {
+            this.position = position;
+            this.color = color;
+        }
 
-    public int getPosition() {
-        return position;
-    }
+        public int getPosition() {
+            return position;
+        }
 
-    public void setPosition(int position) {
-        this.position = position;
-    }
+        public void setPosition(int position) {
+            this.position = position;
+        }
 
-    public Color getColor() {
-        return color;
+        public Color getColor() {
+            return color;
+        }
     }
-}
 }
