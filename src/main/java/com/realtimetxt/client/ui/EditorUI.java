@@ -15,6 +15,8 @@ import java.io.*;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+import com.realtimetxt.client.logic.CRDTController;
+
 public class EditorUI {
 
     private Stage primaryStage;
@@ -26,6 +28,8 @@ public class EditorUI {
     private String viewerCode = "#yq1xrx";
     private String editorCode = "#1jEo2K";
     private String currentUser = "Anonymous Frog";
+
+    private final CRDTController crdtController = new CRDTController();
 
     private final Map<String, UserCaret> remoteCursors = new ConcurrentHashMap<>();
 
@@ -101,7 +105,10 @@ public class EditorUI {
         textArea = new TextArea();
         textArea.setStyle("-fx-font-family: monospace; -fx-font-size: 14px;");
 
-        textArea.textProperty().addListener((obs, oldText, newText) -> updateRemoteCursors());
+        textArea.textProperty().addListener((obs, oldText, newText) -> {
+            updateRemoteCursors();
+            crdtController.textChanged(newText, textArea.getCaretPosition());
+        });
         textArea.caretPositionProperty().addListener((obs, oldPos, newPos) -> {
             // TODO: Send caret position to backend server
         });
@@ -171,12 +178,13 @@ public class EditorUI {
                 while ((line = reader.readLine()) != null) {
                     content.append(line).append("\n");
                 }
-                textArea.setText(content.toString());
+                textArea.setText(content.toString().trim());
                 showNotification("File imported successfully!");
             } catch (IOException e) {
                 showAlert("Error reading file: " + e.getMessage());
             }
         }
+
     }
 
     private void exportFile() {
@@ -186,13 +194,34 @@ public class EditorUI {
         File file = fileChooser.showSaveDialog(primaryStage);
 
         if (file != null) {
+            if (file.exists()) {
+                Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
+                confirm.setTitle("Overwrite File");
+                confirm.setHeaderText("The file already exists.");
+                confirm.setContentText("Do you want to overwrite it?");
+                confirm.getButtonTypes().setAll(ButtonType.YES, ButtonType.NO);
+
+                confirm.showAndWait();
+                if (confirm.getResult() != ButtonType.YES) {
+                    return;
+                }
+            }
+
             try (BufferedWriter writer = new BufferedWriter(new FileWriter(file))) {
                 writer.write(textArea.getText());
-                showNotification("File saved successfully!");
+                showAlertInfo("Success", "File saved successfully!");
             } catch (IOException e) {
                 showAlert("Error saving file: " + e.getMessage());
             }
         }
+    }
+
+    private void showAlertInfo(String title, String message) {
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.setTitle(title);
+        alert.setHeaderText(null);
+        alert.setContentText(message);
+        alert.showAndWait();
     }
 
     // ──────────────────────────────── Utility ────────────────────────────────
@@ -285,25 +314,24 @@ public class EditorUI {
 
     // ──────────────────────────────── UserCaret Inner Class
     // ────────────────────────────────
-    private static class UserCaret {
-        private int position;
-        private final Color color;
+    private int position;
+    private final Color color;
 
-        public UserCaret(int position, Color color) {
-            this.position = position;
-            this.color = color;
-        }
-
-        public int getPosition() {
-            return position;
-        }
-
-        public void setPosition(int position) {
-            this.position = position;
-        }
-
-        public Color getColor() {
-            return color;
-        }
+    public UserCaret(int position, Color color) {
+        this.position = position;
+        this.color = color;
     }
+
+    public int getPosition() {
+        return position;
+    }
+
+    public void setPosition(int position) {
+        this.position = position;
+    }
+
+    public Color getColor() {
+        return color;
+    }
+}
 }
