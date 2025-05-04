@@ -5,15 +5,16 @@ import java.util.UUID;
 import com.realtimetxt.shared.enums.OperationType;
 
 public class CRDTOperation {
+
     private UUID uuid = UUID.randomUUID();
     private long timestamp = System.currentTimeMillis();
-    private int userId;
+    private String userId;
     private OperationType operation;
     private String value = null;
     private UUID parentId = null;
     private UUID itemId = null;
 
-    public CRDTOperation(int userId, OperationType operation, String value, UUID parentId) {
+    public CRDTOperation(String userId, OperationType operation, String value, UUID parentId) {
         this.userId = userId;
         this.operation = operation;
         this.value = value;
@@ -21,7 +22,7 @@ public class CRDTOperation {
         this.itemId = UUID.randomUUID();
     }
 
-    public CRDTOperation(int userId, OperationType operation, String value, UUID parentId, UUID itemId) {
+    public CRDTOperation(String userId, OperationType operation, String value, UUID parentId, UUID itemId) {
         this.userId = userId;
         this.operation = operation;
         this.value = value;
@@ -37,7 +38,7 @@ public class CRDTOperation {
         return timestamp;
     }
 
-    public int getUserId() {
+    public String getUserId() {
         return userId;
     }
 

@@ -8,6 +8,7 @@ import com.realtimetxt.shared.CRDTOperation;
 import com.realtimetxt.shared.enums.OperationType;
 
 public class CRDTController {
+
     private CRDT crdt;
     private String currentText = "";
     private ArrayList<CRDTItem> items = new ArrayList<>();
@@ -68,7 +69,7 @@ public class CRDTController {
 
     private void _insertText(String newText, int index) {
         CRDTOperation operation = new CRDTOperation(
-                0,
+                "0",
                 OperationType.INSERT,
                 String.valueOf(newText.charAt(index)),
                 items.get(index).getId(),
@@ -80,7 +81,7 @@ public class CRDTController {
 
     private void _deleteText(String newText, int index) {
         CRDTOperation operation = new CRDTOperation(
-                0,
+                "0",
                 OperationType.DELETE,
                 null,
                 null,
