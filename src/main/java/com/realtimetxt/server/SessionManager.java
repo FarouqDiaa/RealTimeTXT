@@ -13,11 +13,36 @@ import org.springframework.stereotype.Component;
 @Component
 public class SessionManager {
 
-    private final Map<String, String> codeOfDocument = new ConcurrentHashMap<>();
-    private final Map<String, String> codeOfRole = new ConcurrentHashMap<>();
-    private final Map<String, Set<String>> documentsUsers = new ConcurrentHashMap<>();
-    private final Map<String, Set<String>> usersDocuments = new ConcurrentHashMap<>();
-    private final Map<String, Map<String, String>> usersRoles = new ConcurrentHashMap<>();
+    /**
+     * Maps a unique code to a document ID. This is used to associate a session
+     * code with the corresponding document.
+     */
+    private Map<String, String> codeOfDocument = new ConcurrentHashMap<>();
+
+    /**
+     * Maps a unique code to a role (e.g., "editor" or "viewer"). This is used
+     * to determine the role associated with a session code.
+     */
+    private Map<String, String> codeOfRole = new ConcurrentHashMap<>();
+
+    /**
+     * Maps a document ID to a set of user IDs. This is used to track which
+     * users are currently in a session for a specific document.
+     */
+    private Map<String, Set<String>> documentsUsers = new ConcurrentHashMap<>();
+
+    /**
+     * Maps a user ID to a set of document IDs. This is used to track which
+     * documents a user is currently participating in.
+     */
+    private Map<String, Set<String>> usersDocuments = new ConcurrentHashMap<>();
+
+    /**
+     * Maps a user ID to a map of document IDs and their corresponding roles.
+     * This is used to track the role of a user for each document they are
+     * participating in.
+     */
+    private Map<String, Map<String, String>> usersRoles = new ConcurrentHashMap<>();
 
     public Map<String, String> createSession(String documentId) {
         String editorCode = generateUniqueCode();
@@ -49,16 +74,6 @@ public class SessionManager {
         usersRoles.computeIfAbsent(userId, k -> new ConcurrentHashMap<>()).put(docId, role);
 
         return true;
-    }
-
-    public boolean isValidCode(String code) {
-        // Add logic to validate the code
-        return code != null && !code.isEmpty(); // Example logic
-    }
-
-    public String getUserDocument(String userId) {
-        Set<String> documents = usersDocuments.get(userId);
-        return documents != null && !documents.isEmpty() ? documents.iterator().next() : null;
     }
 
     public void leaveSession(String userId, String documentId) {
@@ -113,11 +128,24 @@ public class SessionManager {
         return codeOfDocument.containsKey(code);
     }
 
+    public boolean isEditorOrViewerCode(String code) {
+        return codeOfDocument.containsKey(code) && (codeOfRole.get(code).equals("editor") || codeOfRole.get(code).equals("viewer"));
+    }
+
     public String getCodeRole(String code) {
         return codeOfRole.get(code);
     }
 
     public String getDocumentFromCode(String code) {
         return codeOfDocument.get(code);
+    }
+
+    public boolean isEditorCode(String code, String documentId) {
+        return "editor".equals(codeOfRole.get(code)) && documentId.equals(codeOfDocument.get(code));
+    }
+
+    public boolean isUserInDocument(String userId, String documentId, String role) {
+        Map<String, String> roles = usersRoles.get(userId);
+        return roles != null && role.equals(roles.get(documentId));
     }
 }

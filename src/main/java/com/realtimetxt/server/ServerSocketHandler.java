@@ -1,10 +1,11 @@
 package com.realtimetxt.server;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
@@ -14,13 +15,8 @@ import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
-import com.realtimetxt.client.network.ClientSocket;
 import com.realtimetxt.shared.CRDTOperation;
-import com.realtimetxt.shared.enums.OperationType;
 
-/**
- * Controller handling WebSocket communication for the collaborative text editor
- */
 @Controller
 public class ServerSocketHandler {
 
@@ -28,100 +24,111 @@ public class ServerSocketHandler {
     private SimpMessagingTemplate messagingTemplate;
 
     @Autowired
-    private SessionManager sessionManager;
+    private SessionManager manager;
 
-    // Document storage - in a production system, this would be in a database
-    private final Map<String, String> documentContents = new ConcurrentHashMap<>();
-    private final Map<String, Map<String, Integer>> userCursors = new ConcurrentHashMap<>();
+    // Store document data for retrieval
+    private Map<String, List<CRDTOperation>> documentData = new ConcurrentHashMap<>();
 
-    /**
-     * Handles document creation requests
-     */
     @MessageMapping("/createDocument")
     public void createDocument(@Payload Map<String, Object> payload, SimpMessageHeaderAccessor headerAccessor) {
-        String userId = (String) payload.get("userId");
         String username = (String) payload.get("username");
-
+        String userId = UUID.randomUUID().toString();
         // Store user information in session
         headerAccessor.getSessionAttributes().put("userId", userId);
-        headerAccessor.getSessionAttributes().put("username", username);
 
-        // Generate a new document ID
         String documentId = UUID.randomUUID().toString();
-
-        // Create sharing codes
-        Map<String, String> codes = sessionManager.createSession(documentId);
+        var codes = manager.createSession(documentId);
         String editorCode = codes.get("editor");
         String viewerCode = codes.get("viewer");
 
-        // Initialize document content
-        documentContents.put(documentId, "");
-        userCursors.put(documentId, new ConcurrentHashMap<>());
+        manager.joinSession(userId, editorCode);
 
-        // Join the user to the document as editor
-        sessionManager.joinSession(userId, editorCode);
+        // Initialize document data
+        documentData.put(documentId, new CopyOnWriteArrayList<>());
 
-        // Send response to the client
         Map<String, Object> response = new HashMap<>();
         response.put("documentId", documentId);
         response.put("editorCode", editorCode);
         response.put("viewerCode", viewerCode);
+        response.put("username", username);
 
+        headerAccessor.getSessionAttributes().put("documentId", documentId);
         messagingTemplate.convertAndSendToUser(userId, "/queue/documentCreated", response);
 
         System.out.println("Created document: " + documentId + " for user: " + userId);
     }
 
-    /**
-     * Handles document join requests
-     */
     @MessageMapping("/joinDocument")
     public void joinDocument(@Payload Map<String, Object> payload, SimpMessageHeaderAccessor headerAccessor) {
-        String userId = (String) payload.get("userId");
         String username = (String) payload.get("username");
         String sharingCode = (String) payload.get("sharingCode");
 
-        // Store user information in session
-        headerAccessor.getSessionAttributes().put("userId", userId);
-        headerAccessor.getSessionAttributes().put("username", username);
+        String userId = (String) headerAccessor.getSessionAttributes().get("userId");
+        if (userId == null) {
+            userId = UUID.randomUUID().toString();
+            headerAccessor.getSessionAttributes().put("userId", userId);
+            headerAccessor.getSessionAttributes().put("username", username);
+        }
 
         Map<String, Object> response = new HashMap<>();
 
-        // Validate sharing code
-        if (!sessionManager.isValidDocument(sharingCode)) {
+        if (!manager.isEditorOrViewerCode(sharingCode)) {
             response.put("success", false);
             response.put("errorMessage", "Invalid sharing code");
             messagingTemplate.convertAndSendToUser(userId, "/queue/joinResponse", response);
             return;
         }
 
-        // Get document ID from code
-        String documentId = sessionManager.getDocumentFromCode(sharingCode);
-        boolean isEditor = "editor".equals(sessionManager.getCodeRole(sharingCode));
+        String documentId = manager.getDocumentFromCode(sharingCode);
+        if (documentId == null) {
+            response.put("success", false);
+            response.put("errorMessage", "Document not found");
+            messagingTemplate.convertAndSendToUser(userId, "/queue/joinResponse", response);
+            return;
+        }
 
+        boolean isEditor = manager.isEditorCode(sharingCode, documentId);
+        if (isEditor) {
+            // Check if user is already in the document as editor
+            if (manager.isUserInDocument(userId, documentId, "editor")) {
+                response.put("success", false);
+                response.put("errorMessage", "Already joined as editor");
+                messagingTemplate.convertAndSendToUser(userId, "/queue/joinResponse", response);
+                return;
+            }
+        } else {
+            // Check if user is already in the document as viewer
+            if (manager.isUserInDocument(userId, documentId, "viewer")) {
+                response.put("success", false);
+                response.put("errorMessage", "Already joined as viewer");
+                messagingTemplate.convertAndSendToUser(userId, "/queue/joinResponse", response);
+                return;
+            }
+        }
         // Join the user to the document
-        sessionManager.joinSession(userId, sharingCode);
+        manager.joinSession(userId, sharingCode);
 
-        // Get initial document content
-        String content = documentContents.getOrDefault(documentId, "");
+        headerAccessor.getSessionAttributes().put("documentId", documentId);
 
-        // Setup user cursor tracking
-        userCursors.putIfAbsent(documentId, new ConcurrentHashMap<>());
-        userCursors.get(documentId).put(userId, 0);
+        // Ensure document data is initialized
+        documentData.putIfAbsent(documentId, new CopyOnWriteArrayList<>());
 
         // Send join response
         response.put("success", true);
         response.put("documentId", documentId);
-        response.put("editor", isEditor);
-        response.put("initialContent", content);
+        response.put("isEditor", isEditor);
 
         messagingTemplate.convertAndSendToUser(userId, "/queue/joinResponse", response);
 
-        // Notify other users about the new user
-        notifyUserPresence(documentId, userId, username, true);
+        Map<String, Object> presenceUpdate = new HashMap<>();
+        presenceUpdate.put("userId", userId);
+        presenceUpdate.put("username", username);
+        presenceUpdate.put("joining", true);
 
-        System.out.println("User " + userId + " joined document " + documentId + " as " +
-                (isEditor ? "editor" : "viewer"));
+        messagingTemplate.convertAndSend("/topic/document/" + documentId + "/users", presenceUpdate);
+
+        System.out.println("User " + userId + " joined document " + documentId + " as "
+                + (isEditor ? "editor" : "viewer"));
     }
 
     /**
@@ -133,46 +140,26 @@ public class ServerSocketHandler {
             SimpMessageHeaderAccessor headerAccessor) {
 
         String userId = (String) headerAccessor.getSessionAttributes().get("userId");
-
-        // Validate user is in the correct document with edit permissions
-        if (!documentId.equals(sessionManager.getUserDocument(userId)) ||
-                !"editor".equals(sessionManager.getUserRole(userId, documentId))) {
-            return;
+        String username = (String) headerAccessor.getSessionAttributes().get("username");
+        String userRole = manager.getUserRole(userId, documentId);
+        if (userRole == null) {
+            return; // User is not in the document
         }
-
+        if (!manager.getUserDocuments(userId).contains(documentId)) {
+            return; // User is not in the correct document
+        }
+        if (!userRole.equals("editor")) {
+            return; // Only editors can perform operations
+        }
         // Process the operation locally (append operation info)
         // operation.setTimestamp(System.currentTimeMillis());
-
         // Broadcast to all document users
+        documentData.get(documentId).add(operation);
         messagingTemplate.convertAndSend("/topic/document/" + documentId + "/operations", operation);
 
-        System.out.println("Operation from user " + userId + " on document " + documentId +
-                ": " + operation.getOperation() +
-                (operation.getValue() != null ? " '" + operation.getValue() + "'" : ""));
-    }
-
-    /**
-     * Handles cursor position updates
-     */
-    @MessageMapping("/document/{documentId}/cursor")
-    public void handleCursorUpdate(@DestinationVariable String documentId,
-            @Payload ClientSocket.CursorUpdate cursorUpdate,
-            SimpMessageHeaderAccessor headerAccessor) {
-
-        String userId = cursorUpdate.getUserId();
-        String username = cursorUpdate.getUsername();
-        Integer position = cursorUpdate.getPosition();
-
-        // Validate user is in the correct document
-        if (!documentId.equals(sessionManager.getUserDocument(userId))) {
-            return;
-        }
-
-        // Update user cursor position
-        userCursors.get(documentId).put(userId, position);
-
-        // Broadcast to all document users - reuse the received object
-        messagingTemplate.convertAndSend("/topic/document/" + documentId + "/cursors", cursorUpdate);
+        System.out.println("Operation from user " + userId + " on document " + documentId
+                + ": " + operation.getOperation()
+                + (operation.getValue() != null ? " '" + operation.getValue() + "'" : ""));
     }
 
     /**
@@ -180,17 +167,18 @@ public class ServerSocketHandler {
      */
     @MessageMapping("/leaveDocument")
     public void leaveDocument(@Payload Map<String, Object> payload, SimpMessageHeaderAccessor headerAccessor) {
-        String userId = (String) payload.get("userId");
-        String documentId = (String) payload.get("documentId");
+        String userId = (String) headerAccessor.getSessionAttributes().get("userId");
+        String documentId = (String) headerAccessor.getSessionAttributes().get("documentId");
         String username = (String) headerAccessor.getSessionAttributes().get("username");
+        if (userId == null || documentId == null) {
+            return; // User is not in a session
+        }
 
         // Remove user from session
-        sessionManager.leaveSession(userId, documentId);
-
-        // Remove user cursor
-        if (userCursors.containsKey(documentId)) {
-            userCursors.get(documentId).remove(userId);
-        }
+        manager.leaveSession(userId, documentId);
+        headerAccessor.getSessionAttributes().remove("documentId");
+        headerAccessor.getSessionAttributes().remove("username");
+        headerAccessor.getSessionAttributes().remove("userId");
 
         // Notify other users
         notifyUserPresence(documentId, userId, username, false);
@@ -210,23 +198,4 @@ public class ServerSocketHandler {
         messagingTemplate.convertAndSend("/topic/document/" + documentId + "/users", presenceUpdate);
     }
 
-    /**
-     * Method called by Spring when a WebSocket session ends
-     * Can be used to handle unexpected disconnections
-     */
-    public void afterConnectionClosed(String userId) {
-        String documentId = sessionManager.getUserDocument(userId);
-        if (documentId != null) {
-            String username = "Unknown"; // In a real implementation, store username in session
-
-            // Clean up user data
-            sessionManager.leaveSession(userId, documentId);
-            if (userCursors.containsKey(documentId)) {
-                userCursors.get(documentId).remove(userId);
-            }
-
-            // Notify other users
-            notifyUserPresence(documentId, userId, username, false);
-        }
-    }
 }
