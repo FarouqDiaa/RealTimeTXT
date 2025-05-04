@@ -32,9 +32,14 @@ public class ServerSocketHandler {
     @MessageMapping("/createDocument")
     public void createDocument(@Payload Map<String, Object> payload, SimpMessageHeaderAccessor headerAccessor) {
         String username = (String) payload.get("username");
-        String userId = UUID.randomUUID().toString();
-        // Store user information in session
-        headerAccessor.getSessionAttributes().put("userId", userId);
+        String userId = (String) headerAccessor.getSessionAttributes().get("userId");
+        if (userId == null) {
+            userId = UUID.randomUUID().toString();
+            headerAccessor.getSessionAttributes().put("userId", userId);
+            headerAccessor.getSessionAttributes().put("username", username);
+        }else{
+            headerAccessor.getSessionAttributes().put("userId", userId);
+        }
 
         String documentId = UUID.randomUUID().toString();
         var codes = manager.createSession(documentId);
@@ -51,8 +56,11 @@ public class ServerSocketHandler {
         response.put("editorCode", editorCode);
         response.put("viewerCode", viewerCode);
         response.put("username", username);
+        response.put("userId", userId);
 
         headerAccessor.getSessionAttributes().put("documentId", documentId);
+        notifyUserPresence(documentId, userId, username, true);
+        
         messagingTemplate.convertAndSendToUser(userId, "/queue/documentCreated", response);
 
         System.out.println("Created document: " + documentId + " for user: " + userId);
@@ -121,14 +129,7 @@ public class ServerSocketHandler {
         response.put("existingData", existingData);
 
         messagingTemplate.convertAndSendToUser(userId, "/queue/joinResponse", response);
-
-        Map<String, Object> presenceUpdate = new HashMap<>();
-        presenceUpdate.put("userId", userId);
-        presenceUpdate.put("username", username);
-        presenceUpdate.put("joining", true);
-
-        messagingTemplate.convertAndSend("/topic/document/" + documentId + "/users", presenceUpdate);
-
+        notifyUserPresence(documentId, userId, username, true);
         System.out.println("User " + userId + " joined document " + documentId + " as "
                 + (isEditor ? "editor" : "viewer"));
     }
@@ -188,9 +189,7 @@ public class ServerSocketHandler {
         System.out.println("User " + userId + " left document " + documentId);
     }
 
-    /**
-     * Notifies all users in a document about a user joining or leaving
-     */
+ 
     private void notifyUserPresence(String documentId, String userId, String username, boolean isJoining) {
         Map<String, Object> presenceUpdate = new HashMap<>();
         presenceUpdate.put("userId", userId);

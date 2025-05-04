@@ -11,6 +11,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
+import org.springframework.boot.autoconfigure.integration.IntegrationProperties.RSocket.Client;
 import org.springframework.messaging.converter.CompositeMessageConverter;
 import org.springframework.messaging.converter.MappingJackson2MessageConverter;
 import org.springframework.messaging.converter.MessageConverter;
@@ -118,23 +119,47 @@ public class ClientSocket {
 
         // Subscribe to document creation response
         stompSession.subscribe("/user/queue/documentCreated", new StompSessionHandlerAdapter() {
-            @Override
+           @Override
             public Type getPayloadType(StompHeaders headers) {
-                return DocumentResponse.class;
+                return Map.class; // Assuming the response is a Map
             }
 
             @Override
             public void handleFrame(StompHeaders headers, Object payload) {
-                DocumentResponse response = (DocumentResponse) payload;
-                documentId = response.getDocumentId();
-                isEditor = true;
+                
+                Map<String, Object> response = (Map<String, Object>) payload;
+                if (response == null) {
+                    callback.onError("Invalid response from server");
+                    return;
+                }
+                if (!response.containsKey("documentId")) {
+                    callback.onError("Invalid response from server: " + response.toString());
+                    return;
+                }
+                if (!response.containsKey("editorCode")) {
+                    callback.onError("Invalid response from server: " + response.toString());
+                    return;
+                }
+                if (!response.containsKey("viewerCode")) {
+                    callback.onError("Invalid response from server: " + response.toString());
+                    return;
+                }
+                if (!response.containsKey("username")) {
+                    callback.onError("Invalid response from server: " + response.toString());
+                    return;
+                }
+                
+                    documentId = response.get("documentId").toString();
+                    String editorCode = response.get("editorCode").toString();
+                    String viewerCode = response.get("viewerCode").toString();
+                    username = response.get("username").toString();
+                    userId= response.get("userId").toString();
+                    isEditor = true; // Creator is always an editor
 
-                // Subscribe to document events after creation
-                subscribeToDocument(documentId);
+                    // Subscribe to document events after creation
+                    subscribeToDocument(documentId);
 
-                callback.onDocumentCreated(response.getDocumentId(),
-                        response.getEditorCode(),
-                        response.getViewerCode());
+                    callback.onDocumentCreated(documentId, editorCode, viewerCode);                                
             }
         });
     }
@@ -173,24 +198,21 @@ public class ClientSocket {
         stompSession.subscribe("/user/queue/joinResponse", new StompSessionHandlerAdapter() {
             @Override
             public Type getPayloadType(StompHeaders headers) {
-                return JoinResponse.class;
+                return Map.class;
+                
             }
 
             @Override
             public void handleFrame(StompHeaders headers, Object payload) {
-                JoinResponse response = (JoinResponse) payload;
-                if (response.isSuccess()) {
-                    documentId = response.getDocumentId();
-                    isEditor = response.isEditor();
-
-                    // Subscribe to document events after joining
+                Map<String, Object> response = (Map<String, Object>) payload;
+                if ((boolean)response.get("success")) {
+                    documentId = response.get("documentId").toString();
+                    isEditor = (boolean) response.get("isEditor");
+                    String initialContent = response.get("existingData").toString();
                     subscribeToDocument(documentId);
-
-                    callback.onDocumentJoined(response.getDocumentId(),
-                            response.isEditor(),
-                            response.getInitialContent());
+                    callback.onDocumentJoined(documentId, isEditor, initialContent);  
                 } else {
-                    callback.onError("Failed to join document: " + response.getErrorMessage());
+                    callback.onError("Failed to join document: " );
                 }
             }
         });
@@ -223,34 +245,18 @@ public class ClientSocket {
                 }
             }
         });
-
-        // Subscribe to cursor updates
-        stompSession.subscribe("/topic/document/" + docId + "/cursors", new StompSessionHandlerAdapter() {
-            @Override
-            public Type getPayloadType(StompHeaders headers) {
-                return CursorUpdate.class;
-            }
-
-            @Override
-            public void handleFrame(StompHeaders headers, Object payload) {
-                CursorUpdate cursorUpdate = (CursorUpdate) payload;
-                // Skip own cursor
-                if (!cursorUpdate.getUserId().equals(userId)) {
-                    callback.onCursorUpdate(cursorUpdate);
-                }
-            }
-        });
-
+      
         // Subscribe to user presence updates
         stompSession.subscribe("/topic/document/" + docId + "/users", new StompSessionHandlerAdapter() {
             @Override
             public Type getPayloadType(StompHeaders headers) {
-                return UserPresenceUpdate.class;
+                return Map.class;
             }
 
             @Override
             public void handleFrame(StompHeaders headers, Object payload) {
-                UserPresenceUpdate presenceUpdate = (UserPresenceUpdate) payload;
+                Map<String, Object> presenceUpdate = (Map<String, Object>) payload;
+                // Notify UI about user presence updates
                 callback.onUserPresenceUpdate(presenceUpdate);
             }
         });
@@ -286,24 +292,6 @@ public class ClientSocket {
         stompSession.send(destination, operation);
     }
 
-    /**
-     * Update cursor position
-     * 
-     * @param position The cursor position in the document
-     */
-    public void updateCursorPosition(int position) {
-        if (stompSession == null || !stompSession.isConnected()) {
-            return; // Don't queue cursor updates
-        }
-
-        if (documentId == null) {
-            return; // Can't send cursor updates without a document
-        }
-
-        CursorUpdate cursorUpdate = new CursorUpdate(userId, username, position);
-        String destination = "/app/document/" + documentId + "/cursor";
-        stompSession.send(destination, cursorUpdate);
-    }
 
     /**
      * Schedule periodic reconnection attempts
@@ -423,155 +411,7 @@ public class ClientSocket {
         }
     }
 
-    // Helper model classes for WebSocket communication
-    public static class DocumentResponse {
-        private String documentId;
-        private String editorCode;
-        private String viewerCode;
-
-        public String getDocumentId() {
-            return documentId;
-        }
-
-        public void setDocumentId(String documentId) {
-            this.documentId = documentId;
-        }
-
-        public String getEditorCode() {
-            return editorCode;
-        }
-
-        public void setEditorCode(String editorCode) {
-            this.editorCode = editorCode;
-        }
-
-        public String getViewerCode() {
-            return viewerCode;
-        }
-
-        public void setViewerCode(String viewerCode) {
-            this.viewerCode = viewerCode;
-        }
-    }
-
-    public static class JoinResponse {
-        private boolean success;
-        private String documentId;
-        private boolean isEditor;
-        private String initialContent;
-        private String errorMessage;
-
-        public boolean isSuccess() {
-            return success;
-        }
-
-        public void setSuccess(boolean success) {
-            this.success = success;
-        }
-
-        public String getDocumentId() {
-            return documentId;
-        }
-
-        public void setDocumentId(String documentId) {
-            this.documentId = documentId;
-        }
-
-        public boolean isEditor() {
-            return isEditor;
-        }
-
-        public void setEditor(boolean isEditor) {
-            this.isEditor = isEditor;
-        }
-
-        public String getInitialContent() {
-            return initialContent;
-        }
-
-        public void setInitialContent(String initialContent) {
-            this.initialContent = initialContent;
-        }
-
-        public String getErrorMessage() {
-            return errorMessage;
-        }
-
-        public void setErrorMessage(String errorMessage) {
-            this.errorMessage = errorMessage;
-        }
-    }
-
-    public static class CursorUpdate {
-        private String userId;
-        private String username;
-        private int position;
-
-        public CursorUpdate() {
-        }
-
-        public CursorUpdate(String userId, String username, int position) {
-            this.userId = userId;
-            this.username = username;
-            this.position = position;
-        }
-
-        public String getUserId() {
-            return userId;
-        }
-
-        public void setUserId(String userId) {
-            this.userId = userId;
-        }
-
-        public String getUsername() {
-            return username;
-        }
-
-        public void setUsername(String username) {
-            this.username = username;
-        }
-
-        public int getPosition() {
-            return position;
-        }
-
-        public void setPosition(int position) {
-            this.position = position;
-        }
-    }
-
-    public static class UserPresenceUpdate {
-        private String userId;
-        private String username;
-        private boolean isJoining;
-
-        public String getUserId() {
-            return userId;
-        }
-
-        public void setUserId(String userId) {
-            this.userId = userId;
-        }
-
-        public String getUsername() {
-            return username;
-        }
-
-        public void setUsername(String username) {
-            this.username = username;
-        }
-
-        public boolean isJoining() {
-            return isJoining;
-        }
-
-        public void setJoining(boolean isJoining) {
-            this.isJoining = isJoining;
-        }
-    }
-
-    /**
+     /**
      * Callback interface for UI updates
      */
     public interface TextEditorCallback {
@@ -581,9 +421,9 @@ public class ClientSocket {
 
         void onRemoteOperation(CRDTOperation operation);
 
-        void onCursorUpdate(CursorUpdate cursorUpdate);
+        void onCursorUpdate(Object cursorUpdate);
 
-        void onUserPresenceUpdate(UserPresenceUpdate presenceUpdate);
+        void onUserPresenceUpdate(Object presenceUpdate);
 
         void onReconnected();
 
