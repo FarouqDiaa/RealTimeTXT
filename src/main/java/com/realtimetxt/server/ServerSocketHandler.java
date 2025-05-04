@@ -32,15 +32,14 @@ public class ServerSocketHandler {
     @MessageMapping("/createDocument")
     public void createDocument(@Payload Map<String, Object> payload, SimpMessageHeaderAccessor headerAccessor) {
         String username = (String) payload.get("username");
-        String userId = (String) headerAccessor.getSessionAttributes().get("userId");
-        if (userId == null) {
-            userId = UUID.randomUUID().toString();
-            headerAccessor.getSessionAttributes().put("userId", userId);
-            headerAccessor.getSessionAttributes().put("username", username);
-        } else {
-            headerAccessor.getSessionAttributes().put("userId", userId);
+        if (username == null) {
+            username = "Guest";
         }
-
+        String userId = (String) payload.get("userId");
+        if (userId == null) {
+            System.err.println("Error: User ID is required");
+            return;
+        }
         String documentId = UUID.randomUUID().toString();
         var codes = manager.createSession(documentId);
         String editorCode = codes.get("editor");
@@ -58,10 +57,9 @@ public class ServerSocketHandler {
         response.put("username", username);
         response.put("userId", userId);
 
-        headerAccessor.getSessionAttributes().put("documentId", documentId);
         notifyUserPresence(documentId, userId, username, true);
 
-        messagingTemplate.convertAndSendToUser(userId, "user/queue/documentCreated", response);
+        messagingTemplate.convertAndSend("/topic/document/" + documentId, response);
 
         System.out.println("Created document: " + documentId + " for user: " + userId);
     }
@@ -69,13 +67,21 @@ public class ServerSocketHandler {
     @MessageMapping("/joinDocument")
     public void joinDocument(@Payload Map<String, Object> payload, SimpMessageHeaderAccessor headerAccessor) {
         String username = (String) payload.get("username");
-        String sharingCode = (String) payload.get("sharingCode");
-
-        String userId = (String) headerAccessor.getSessionAttributes().get("userId");
+        if (username == null) {
+            username = "Guest";
+        }
+        String userId = (String) payload.get("userId");
         if (userId == null) {
-            userId = UUID.randomUUID().toString();
-            headerAccessor.getSessionAttributes().put("userId", userId);
-            headerAccessor.getSessionAttributes().put("username", username);
+            System.err.println("Error: User ID is required");
+            return;
+        }
+        String sharingCode = (String) payload.get("sharingCode");
+        if (sharingCode == null) {
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("errorMessage", "Sharing code is required");
+            messagingTemplate.convertAndSend("/topic/joinResponse/" + userId, response);
+            return;
         }
 
         Map<String, Object> response = new HashMap<>();
@@ -83,7 +89,7 @@ public class ServerSocketHandler {
         if (!manager.isEditorOrViewerCode(sharingCode)) {
             response.put("success", false);
             response.put("errorMessage", "Invalid sharing code");
-            messagingTemplate.convertAndSendToUser(userId, "/queue/joinResponse", response);
+            messagingTemplate.convertAndSend("/topic/joinResponse/" + userId, response);
             return;
         }
 
@@ -91,7 +97,7 @@ public class ServerSocketHandler {
         if (documentId == null) {
             response.put("success", false);
             response.put("errorMessage", "Document not found");
-            messagingTemplate.convertAndSendToUser(userId, "/queue/joinResponse", response);
+            messagingTemplate.convertAndSend("/topic/joinResponse/" + userId, response);
             return;
         }
 
@@ -101,7 +107,7 @@ public class ServerSocketHandler {
             if (manager.isUserInDocument(userId, documentId, "editor")) {
                 response.put("success", false);
                 response.put("errorMessage", "Already joined as editor");
-                messagingTemplate.convertAndSendToUser(userId, "/queue/joinResponse", response);
+                messagingTemplate.convertAndSend("/topic/joinResponse/" + userId, response);
                 return;
             }
         } else {
@@ -109,14 +115,12 @@ public class ServerSocketHandler {
             if (manager.isUserInDocument(userId, documentId, "viewer")) {
                 response.put("success", false);
                 response.put("errorMessage", "Already joined as viewer");
-                messagingTemplate.convertAndSendToUser(userId, "/queue/joinResponse", response);
+                messagingTemplate.convertAndSend("/topic/joinResponse/" + userId, response);
                 return;
             }
         }
         // Join the user to the document
         manager.joinSession(userId, sharingCode);
-
-        headerAccessor.getSessionAttributes().put("documentId", documentId);
 
         // Ensure document data is initialized or apply existing data
         documentData.putIfAbsent(documentId, new CopyOnWriteArrayList<>());
@@ -128,7 +132,7 @@ public class ServerSocketHandler {
         response.put("isEditor", isEditor);
         response.put("existingData", existingData);
 
-        messagingTemplate.convertAndSendToUser(userId, "/queue/joinResponse", response);
+        messagingTemplate.convertAndSend("/topic/document/" + documentId, response);
         notifyUserPresence(documentId, userId, username, true);
         System.out.println("User " + userId + " joined document " + documentId + " as "
                 + (isEditor ? "editor" : "viewer"));
@@ -138,12 +142,11 @@ public class ServerSocketHandler {
      * Handles document operations (inserts/deletes)
      */
     @MessageMapping("/document/{documentId}/operation")
-    public void handleOperation(@DestinationVariable String documentId,
+    public void handleOperation(@Payload Map<String, Object> payload, @DestinationVariable String documentId,
             @Payload CRDTOperation operation,
             SimpMessageHeaderAccessor headerAccessor) {
 
-        String userId = (String) headerAccessor.getSessionAttributes().get("userId");
-        String username = (String) headerAccessor.getSessionAttributes().get("username");
+        String userId = (String) payload.get("userId");
         String userRole = manager.getUserRole(userId, documentId);
         if (userRole == null) {
             return; // User is not in the document
@@ -154,9 +157,6 @@ public class ServerSocketHandler {
         if (!userRole.equals("editor")) {
             return; // Only editors can perform operations
         }
-        // Process the operation locally (append operation info)
-        // operation.setTimestamp(System.currentTimeMillis());
-        // Broadcast to all document users
         documentData.get(documentId).add(operation);
         messagingTemplate.convertAndSend("/topic/document/" + documentId + "/operations", operation);
 
@@ -170,9 +170,9 @@ public class ServerSocketHandler {
      */
     @MessageMapping("/leaveDocument")
     public void leaveDocument(@Payload Map<String, Object> payload, SimpMessageHeaderAccessor headerAccessor) {
-        String userId = (String) headerAccessor.getSessionAttributes().get("userId");
-        String documentId = (String) headerAccessor.getSessionAttributes().get("documentId");
-        String username = (String) headerAccessor.getSessionAttributes().get("username");
+        String userId = (String) payload.get("userId");
+        String documentId = (String) payload.get("documentId");
+        String username = (String) payload.get("username");
         if (userId == null || documentId == null) {
             return; // User is not in a session
         }

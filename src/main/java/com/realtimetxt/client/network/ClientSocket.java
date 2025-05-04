@@ -52,9 +52,9 @@ public class ClientSocket {
      * @param username The user's display name
      * @param callback Callback interface for UI updates
      */
-    public ClientSocket(String username, TextEditorCallback callback) {
+    public ClientSocket(String username, String userId, TextEditorCallback callback) {
         this.username = username;
-        this.userId = UUID.randomUUID().toString();
+        this.userId = userId;
         this.callback = callback;
     }
 

@@ -31,13 +31,6 @@ public class MainClient extends Application {
         // Generate a random ID for this user
         username = generateUsername();
         System.out.println("User Name: " + username);
-
-        // You would typically connect to the server here
-        // connectToServer("localhost", 12345);
-
-        // For demo purposes, add a sample remote cursor
-        ui.addRemoteCursor("Anonymous Crab", 20, Color.DARKRED);
-
     }
 
     private String generateUsername() {

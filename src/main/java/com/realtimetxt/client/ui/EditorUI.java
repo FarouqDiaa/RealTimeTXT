@@ -13,6 +13,7 @@ import javafx.stage.Stage;
 
 import java.io.*;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 import com.realtimetxt.client.logic.CRDTController;
@@ -77,7 +78,8 @@ public class EditorUI implements ClientSocket.TextEditorCallback {
 
         dialog.showAndWait().ifPresent(name -> {
             currentUser = name;
-            this.clientSocket = new ClientSocket(name, new ClientSocket.TextEditorCallback() {
+            String authenticatedUserId = UUID.randomUUID().toString(); // Generate a random ID for this user
+            this.clientSocket = new ClientSocket(name, authenticatedUserId, new ClientSocket.TextEditorCallback() {
                 @Override
                 public void onUserPresenceUpdate(Map<String, Object> presenceUpdate) {
                     Platform.runLater(() -> {
