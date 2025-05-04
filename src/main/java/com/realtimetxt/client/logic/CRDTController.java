@@ -117,7 +117,7 @@ public class CRDTController {
         stack.push(crdt.getRoot());
 
         while (!stack.isEmpty()) {
-            CRDTItem item = stack.remove(0);
+            CRDTItem item = stack.pop();
             if (!item.isDeleted()) {
                 sb.append(item.getValue());
             }

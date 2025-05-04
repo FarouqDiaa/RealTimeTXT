@@ -55,7 +55,7 @@ public class CRDTItem {
 
     public void addChild(CRDTItem child) {
         for (CRDTItem item : children) {
-            if (child.getTimestamp() >= item.getTimestamp()) {
+            if (child.getTimestamp() < item.getTimestamp()) {
                 children.add(children.indexOf(item), child);
                 return;
             }
