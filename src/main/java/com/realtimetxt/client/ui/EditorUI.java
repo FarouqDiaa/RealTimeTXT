@@ -17,17 +17,12 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import com.realtimetxt.client.logic.CRDTController;
 import com.realtimetxt.client.network.ClientSocket;
-<<<<<<< HEAD
-=======
 import com.realtimetxt.client.network.ClientSocket.CursorUpdate;
-import com.realtimetxt.client.network.ClientSocket.TextEditorCallback;
 import com.realtimetxt.client.network.ClientSocket.UserPresenceUpdate;
->>>>>>> b3e882e565199caa817913bf9cf5947d8fe9b5ff
 import com.realtimetxt.shared.CRDTOperation;
 
-public class EditorUI implements TextEditorCallback {
+public class EditorUI implements ClientSocket.TextEditorCallback {
 
-    private ClientSocket clientSocket;
     private Stage primaryStage;
     private TextArea textArea;
     private VBox userListBox;
