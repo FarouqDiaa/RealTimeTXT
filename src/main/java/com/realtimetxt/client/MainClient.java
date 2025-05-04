@@ -1,9 +1,11 @@
 package com.realtimetxt.client;
 
+import com.realtimetxt.client.network.ClientSocket;
 import com.realtimetxt.client.ui.EditorUI;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.scene.paint.Color;
+import javafx.scene.text.Text;
 import javafx.stage.Stage;
 
 import java.io.*;
@@ -15,7 +17,7 @@ import java.util.concurrent.Executors;
 public class MainClient extends Application {
     private EditorUI ui;
     private ExecutorService executor;
-    private String userId;
+    private String username;
 
     @Override
     public void start(Stage primaryStage) {
@@ -27,7 +29,8 @@ public class MainClient extends Application {
         executor = Executors.newSingleThreadExecutor();
 
         // Generate a random ID for this user
-        userId = generateUserId();
+        username = generateUsername();
+        System.out.println("User Name: " + username);
 
         // You would typically connect to the server here
         // connectToServer("localhost", 12345);
@@ -37,7 +40,7 @@ public class MainClient extends Application {
 
     }
 
-    private String generateUserId() {
+    private String generateUsername() {
         String[] adjectives = { "Anonymous", "Happy", "Sleepy", "Curious", "Excited" };
         String[] animals = { "Frog", "Bear", "Cat", "Dog", "Rabbit", "Lion", "Tiger" };
 

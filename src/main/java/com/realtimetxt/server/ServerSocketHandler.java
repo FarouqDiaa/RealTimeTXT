@@ -88,7 +88,7 @@ public class ServerSocketHandler {
         Map<String, Object> response = new HashMap<>();
 
         // Validate sharing code
-        if (!sessionManager.isValidCode(sharingCode)) {
+        if (!sessionManager.isValidDocument(sharingCode)) {
             response.put("success", false);
             response.put("errorMessage", "Invalid sharing code");
             messagingTemplate.convertAndSendToUser(userId, "/queue/joinResponse", response);
@@ -136,7 +136,7 @@ public class ServerSocketHandler {
 
         // Validate user is in the correct document with edit permissions
         if (!documentId.equals(sessionManager.getUserDocument(userId)) ||
-                !"editor".equals(sessionManager.getUserRole(userId))) {
+                !"editor".equals(sessionManager.getUserRole(userId, documentId))) {
             return;
         }
 
