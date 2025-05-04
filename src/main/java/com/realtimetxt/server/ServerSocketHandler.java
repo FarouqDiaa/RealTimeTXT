@@ -88,7 +88,7 @@ public class ServerSocketHandler {
         Map<String, Object> response = new HashMap<>();
 
         // Validate sharing code
-        if (!sessionManager.isValidCode(sharingCode)) {
+        if (!sessionManager.isValidDocument(sharingCode)) {
             response.put("success", false);
             response.put("errorMessage", "Invalid sharing code");
             messagingTemplate.convertAndSendToUser(userId, "/queue/joinResponse", response);

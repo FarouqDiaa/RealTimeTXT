@@ -33,6 +33,21 @@ public class CRDTController {
         System.out.println("Current text: " + renderText());
     }
 
+    public void onRemoteOperation(CRDTOperation operation) {
+        System.out.println("Remote operation: " + operation);
+        if (operation.getOperation() == OperationType.INSERT) {
+            CRDTItem item = crdt.findCrItem(operation.getItemId());
+            if (item != null) {
+                items.add(item);
+            }
+        } else if (operation.getOperation() == OperationType.DELETE) {
+            CRDTItem item = crdt.findCrItem(operation.getItemId());
+            if (item != null) {
+                items.remove(item);
+            }
+        }
+    }
+
     public String renderText() {
         StringBuilder sb = new StringBuilder();
         Stack<CRDTItem> stack = new Stack<>();
