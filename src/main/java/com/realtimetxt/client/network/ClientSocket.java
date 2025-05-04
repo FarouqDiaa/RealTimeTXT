@@ -401,9 +401,7 @@ public class ClientSocket {
 
         void onRemoteOperation(CRDTOperation operation);
 
-        void onCursorUpdate(Object cursorUpdate);
-
-        void onUserPresenceUpdate(Object presenceUpdate);
+        void onUserPresenceUpdate(Map<String, Object> presenceUpdate);
 
         void onReconnected();
 
