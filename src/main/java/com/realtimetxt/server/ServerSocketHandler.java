@@ -37,7 +37,7 @@ public class ServerSocketHandler {
             userId = UUID.randomUUID().toString();
             headerAccessor.getSessionAttributes().put("userId", userId);
             headerAccessor.getSessionAttributes().put("username", username);
-        }else{
+        } else {
             headerAccessor.getSessionAttributes().put("userId", userId);
         }
 
@@ -60,8 +60,8 @@ public class ServerSocketHandler {
 
         headerAccessor.getSessionAttributes().put("documentId", documentId);
         notifyUserPresence(documentId, userId, username, true);
-        
-        messagingTemplate.convertAndSendToUser(userId, "/queue/documentCreated", response);
+
+        messagingTemplate.convertAndSendToUser(userId, "user/queue/documentCreated", response);
 
         System.out.println("Created document: " + documentId + " for user: " + userId);
     }
@@ -189,7 +189,6 @@ public class ServerSocketHandler {
         System.out.println("User " + userId + " left document " + documentId);
     }
 
- 
     private void notifyUserPresence(String documentId, String userId, String username, boolean isJoining) {
         Map<String, Object> presenceUpdate = new HashMap<>();
         presenceUpdate.put("userId", userId);

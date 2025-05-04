@@ -17,11 +17,46 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import com.realtimetxt.client.logic.CRDTController;
 import com.realtimetxt.client.network.ClientSocket;
-import com.realtimetxt.client.network.ClientSocket.CursorUpdate;
-import com.realtimetxt.client.network.ClientSocket.UserPresenceUpdate;
 import com.realtimetxt.shared.CRDTOperation;
 
 public class EditorUI implements ClientSocket.TextEditorCallback {
+
+    @Override
+    public void onCursorUpdate(Object cursorUpdate) {
+        Platform.runLater(() -> {
+            showNotification("Cursor updated for user: " + cursorUpdate);
+            // TODO: Handle cursor update logic here
+        });
+    }
+
+    @Override
+    public void onUserPresenceUpdate(Object presenceUpdate) {
+        Platform.runLater(() -> {
+            showNotification("User presence updated: " + presenceUpdate);
+            // TODO: Handle user presence update logic here
+        });
+    }
+
+    @Override
+    public void onReconnected() {
+        Platform.runLater(() -> {
+            showNotification("Reconnected to the server");
+        });
+    }
+
+    @Override
+    public void onDisconnected(String reason) {
+        Platform.runLater(() -> {
+            showAlert("Disconnected: " + reason);
+        });
+    }
+
+    @Override
+    public void onError(String error) {
+        Platform.runLater(() -> {
+            showAlert(error);
+        });
+    }
 
     private Stage primaryStage;
     private TextArea textArea;
@@ -52,8 +87,25 @@ public class EditorUI implements ClientSocket.TextEditorCallback {
             currentUser = name;
             this.clientSocket = new ClientSocket(name, new ClientSocket.TextEditorCallback() {
                 @Override
+                public void onCursorUpdate(Object cursorUpdate) {
+                    Platform.runLater(() -> {
+                        showNotification("Cursor updated for user: " + cursorUpdate);
+                        // TODO: Handle cursor update logic here
+                    });
+                }
+
+                @Override
+                public void onUserPresenceUpdate(Object presenceUpdate) {
+                    Platform.runLater(() -> {
+                        showNotification("User presence updated: " + presenceUpdate);
+                        // TODO: Handle user presence update logic here
+                    });
+                }
+
+                @Override
                 public void onDocumentCreated(String documentId, String editorCode, String viewerCode) {
                     Platform.runLater(() -> {
+                        showNotification("Document created with ID: " + documentId);
                         setEditorCode(editorCode);
                         setViewerCode(viewerCode);
                         showNotification("New document created with ID: " + documentId);
@@ -73,22 +125,6 @@ public class EditorUI implements ClientSocket.TextEditorCallback {
                     Platform.runLater(() -> {
                         showNotification("Remote operation received");
                         // TODO: Apply the CRDT operation to the local document
-                    });
-                }
-
-                @Override
-                public void onCursorUpdate(ClientSocket.CursorUpdate cursorUpdate) {
-                    Platform.runLater(() -> {
-                        showNotification("Cursor updated for user: " + cursorUpdate.getUserId());
-                        addRemoteCursor(cursorUpdate.getUserId(), cursorUpdate.getPosition(), Color.BLUE);
-                    });
-                }
-
-                @Override
-                public void onUserPresenceUpdate(ClientSocket.UserPresenceUpdate presenceUpdate) {
-                    Platform.runLater(() -> {
-                        showNotification("User presence updated: " + presenceUpdate.getUserId());
-                        updateUserList();
                     });
                 }
 
@@ -457,40 +493,6 @@ public class EditorUI implements ClientSocket.TextEditorCallback {
             String newText = crdtController.renderText();
             updateText(newText, true);
         });
-    }
-
-    @Override
-    public void onCursorUpdate(CursorUpdate update) {
-        Platform.runLater(() -> {
-            UserCaret caret = remoteCursors.get(update.getUserId());
-            if (caret != null) {
-                caret.setPosition(update.getPosition());
-                updateRemoteCursors();
-            }
-        });
-    }
-
-    @Override
-    public void onUserPresenceUpdate(UserPresenceUpdate presenceUpdate) {
-        // Update the user list based on presence update
-    }
-
-    @Override
-    public void onReconnected() {
-        // Handle reconnection logic
-        showNotification("Reconnected to the server.");
-    }
-
-    @Override
-    public void onDisconnected(String reason) {
-        // Handle disconnection logic
-        showNotification("Disconnected from the server. Reason: " + reason);
-    }
-
-    @Override
-    public void onError(String error) {
-        // Handle error logic
-        showAlert("Error: " + error);
     }
 
     public static class UserCaret {

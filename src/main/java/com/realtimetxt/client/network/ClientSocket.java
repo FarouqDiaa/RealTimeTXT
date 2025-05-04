@@ -119,47 +119,28 @@ public class ClientSocket {
 
         // Subscribe to document creation response
         stompSession.subscribe("/user/queue/documentCreated", new StompSessionHandlerAdapter() {
-           @Override
+            @Override
             public Type getPayloadType(StompHeaders headers) {
                 return Map.class; // Assuming the response is a Map
             }
 
             @Override
             public void handleFrame(StompHeaders headers, Object payload) {
-                
                 Map<String, Object> response = (Map<String, Object>) payload;
-                if (response == null) {
-                    callback.onError("Invalid response from server");
+                if (response == null || !response.containsKey("documentId") ||
+                        !response.containsKey("editorCode") || !response.containsKey("viewerCode")) {
+                    callback.onError("Invalid response from server: " + response);
                     return;
                 }
-                if (!response.containsKey("documentId")) {
-                    callback.onError("Invalid response from server: " + response.toString());
-                    return;
-                }
-                if (!response.containsKey("editorCode")) {
-                    callback.onError("Invalid response from server: " + response.toString());
-                    return;
-                }
-                if (!response.containsKey("viewerCode")) {
-                    callback.onError("Invalid response from server: " + response.toString());
-                    return;
-                }
-                if (!response.containsKey("username")) {
-                    callback.onError("Invalid response from server: " + response.toString());
-                    return;
-                }
-                
-                    documentId = response.get("documentId").toString();
-                    String editorCode = response.get("editorCode").toString();
-                    String viewerCode = response.get("viewerCode").toString();
-                    username = response.get("username").toString();
-                    userId= response.get("userId").toString();
-                    isEditor = true; // Creator is always an editor
 
-                    // Subscribe to document events after creation
-                    subscribeToDocument(documentId);
+                documentId = response.get("documentId").toString();
+                String editorCode = response.get("editorCode").toString();
+                String viewerCode = response.get("viewerCode").toString();
+                isEditor = true; // Creator is always an editor
 
-                    callback.onDocumentCreated(documentId, editorCode, viewerCode);                                
+                // Subscribe to document events after creation
+                subscribeToDocument(documentId);
+                callback.onDocumentCreated(documentId, editorCode, viewerCode);
             }
         });
     }
@@ -199,20 +180,20 @@ public class ClientSocket {
             @Override
             public Type getPayloadType(StompHeaders headers) {
                 return Map.class;
-                
+
             }
 
             @Override
             public void handleFrame(StompHeaders headers, Object payload) {
                 Map<String, Object> response = (Map<String, Object>) payload;
-                if ((boolean)response.get("success")) {
+                if ((boolean) response.get("success")) {
                     documentId = response.get("documentId").toString();
                     isEditor = (boolean) response.get("isEditor");
                     String initialContent = response.get("existingData").toString();
                     subscribeToDocument(documentId);
-                    callback.onDocumentJoined(documentId, isEditor, initialContent);  
+                    callback.onDocumentJoined(documentId, isEditor, initialContent);
                 } else {
-                    callback.onError("Failed to join document: " );
+                    callback.onError("Failed to join document: ");
                 }
             }
         });
@@ -245,7 +226,7 @@ public class ClientSocket {
                 }
             }
         });
-      
+
         // Subscribe to user presence updates
         stompSession.subscribe("/topic/document/" + docId + "/users", new StompSessionHandlerAdapter() {
             @Override
@@ -291,7 +272,6 @@ public class ClientSocket {
         String destination = "/app/document/" + documentId + "/operation";
         stompSession.send(destination, operation);
     }
-
 
     /**
      * Schedule periodic reconnection attempts
@@ -411,7 +391,7 @@ public class ClientSocket {
         }
     }
 
-     /**
+    /**
      * Callback interface for UI updates
      */
     public interface TextEditorCallback {
