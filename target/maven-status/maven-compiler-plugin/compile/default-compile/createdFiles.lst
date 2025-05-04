@@ -1,8 +1,8 @@
-com\realtimetxt\Main.class
 com\realtimetxt\shared\CRDTOperation.class
 com\realtimetxt\client\logic\CRDTItem.class
 com\realtimetxt\shared\enums\OperationType.class
-com\realtimetxt\client\MainClient.class
 com\realtimetxt\client\network\ClientSocket.class
-com\realtimetxt\client\logic\CRDT.class
 com\realtimetxt\client\ui\EditorUI.class
+com\realtimetxt\Main.class
+com\realtimetxt\client\MainClient.class
+com\realtimetxt\client\logic\CRDT.class

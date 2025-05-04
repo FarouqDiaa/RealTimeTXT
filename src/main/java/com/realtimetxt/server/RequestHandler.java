@@ -9,7 +9,7 @@ public class RequestHandler {
     }
 
     public String handleRequest(String userId, String action, String payload) {
-        String role = sessionManager.getUserRole(userId);
+        String role = sessionManager.getUserRole(userId, sessionManager.getUserDocument(userId));
 
         switch (action) {
             case "getDocumentState":

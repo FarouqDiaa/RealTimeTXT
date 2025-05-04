@@ -48,6 +48,11 @@ public class SessionManager {
         return true;
     }
 
+    public String getUserDocument(String userId) {
+        Set<String> documents = usersDocuments.get(userId);
+        return documents != null && !documents.isEmpty() ? documents.iterator().next() : null;
+    }
+
     public void leaveSession(String userId, String documentId) {
         Set<String> users = documentsUsers.get(documentId);
         if (users != null) {
