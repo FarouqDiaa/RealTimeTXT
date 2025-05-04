@@ -22,15 +22,7 @@ import com.realtimetxt.shared.CRDTOperation;
 public class EditorUI implements ClientSocket.TextEditorCallback {
 
     @Override
-    public void onCursorUpdate(Object cursorUpdate) {
-        Platform.runLater(() -> {
-            showNotification("Cursor updated for user: " + cursorUpdate);
-            // TODO: Handle cursor update logic here
-        });
-    }
-
-    @Override
-    public void onUserPresenceUpdate(Object presenceUpdate) {
+    public void onUserPresenceUpdate(Map<String, Object> presenceUpdate) {
         Platform.runLater(() -> {
             showNotification("User presence updated: " + presenceUpdate);
             // TODO: Handle user presence update logic here
@@ -87,15 +79,7 @@ public class EditorUI implements ClientSocket.TextEditorCallback {
             currentUser = name;
             this.clientSocket = new ClientSocket(name, new ClientSocket.TextEditorCallback() {
                 @Override
-                public void onCursorUpdate(Object cursorUpdate) {
-                    Platform.runLater(() -> {
-                        showNotification("Cursor updated for user: " + cursorUpdate);
-                        // TODO: Handle cursor update logic here
-                    });
-                }
-
-                @Override
-                public void onUserPresenceUpdate(Object presenceUpdate) {
+                public void onUserPresenceUpdate(Map<String, Object> presenceUpdate) {
                     Platform.runLater(() -> {
                         showNotification("User presence updated: " + presenceUpdate);
                         // TODO: Handle user presence update logic here
