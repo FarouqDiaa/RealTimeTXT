@@ -110,13 +110,15 @@ public class ServerSocketHandler {
 
         headerAccessor.getSessionAttributes().put("documentId", documentId);
 
-        // Ensure document data is initialized
+        // Ensure document data is initialized or apply existing data
         documentData.putIfAbsent(documentId, new CopyOnWriteArrayList<>());
+        List<CRDTOperation> existingData = documentData.get(documentId);
 
         // Send join response
         response.put("success", true);
         response.put("documentId", documentId);
         response.put("isEditor", isEditor);
+        response.put("existingData", existingData);
 
         messagingTemplate.convertAndSendToUser(userId, "/queue/joinResponse", response);
 
