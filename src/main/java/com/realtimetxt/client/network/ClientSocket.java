@@ -34,7 +34,7 @@ import com.realtimetxt.shared.CRDTOperation;
 public class ClientSocket {
     private final String SERVER_URL = "ws://localhost:8080/ws";
     private final int SOCKET_TIMEOUT = 5000; // 5 seconds
-    
+
     private StompSession stompSession;
     private SockJsClient sockJsClient;
     private String userId;
@@ -44,9 +44,10 @@ public class ClientSocket {
     private TextEditorCallback callback;
     private boolean isReconnecting = false;
     private final List<CRDTOperation> pendingOperations = Collections.synchronizedList(new ArrayList<>());
-    
+
     /**
      * Constructor
+     * 
      * @param username The user's display name
      * @param callback Callback interface for UI updates
      */
@@ -55,28 +56,36 @@ public class ClientSocket {
         this.userId = UUID.randomUUID().toString();
         this.callback = callback;
     }
-    
+
+    // Add this method to the ClientSocket class
+    public boolean isConnected() {
+        // Implement logic to check if the socket is connected
+        return stompSession != null && stompSession.isConnected(); // Check if the STOMP session is connected
+    }
+
     /**
      * Connect to the WebSocket server
+     * 
      * @return true if connection is successful, false otherwise
      */
     public boolean connect() {
         try {
-            List<Transport> transports = Collections.singletonList(new WebSocketTransport(new StandardWebSocketClient()));
+            List<Transport> transports = Collections
+                    .singletonList(new WebSocketTransport(new StandardWebSocketClient()));
             sockJsClient = new SockJsClient(transports);
-            
+
             WebSocketStompClient stompClient = new WebSocketStompClient(sockJsClient);
-            
+
             // Set up message converters for JSON and String
             List<MessageConverter> converters = new ArrayList<>();
             converters.add(new MappingJackson2MessageConverter());
             converters.add(new StringMessageConverter());
             stompClient.setMessageConverter(new CompositeMessageConverter(converters));
-            
+
             // Connect to the server with timeout
             StompSessionHandler sessionHandler = new EditorStompSessionHandler();
             stompSession = stompClient.connect(SERVER_URL, sessionHandler).get(SOCKET_TIMEOUT, TimeUnit.MILLISECONDS);
-            
+
             System.out.println("Connected to collaborative text editor server as " + username);
             return true;
         } catch (InterruptedException | ExecutionException | TimeoutException e) {
@@ -84,7 +93,7 @@ public class ClientSocket {
             return false;
         }
     }
-    
+
     /**
      * Create a new document and get sharing codes
      */
@@ -99,39 +108,40 @@ public class ClientSocket {
             requestNewDocument();
         }
     }
-    
+
     private void requestNewDocument() {
         Map<String, Object> payload = new HashMap<>();
         payload.put("userId", userId);
         payload.put("username", username);
-        
+
         stompSession.send("/app/createDocument", payload);
-        
+
         // Subscribe to document creation response
         stompSession.subscribe("/user/queue/documentCreated", new StompSessionHandlerAdapter() {
             @Override
             public Type getPayloadType(StompHeaders headers) {
                 return DocumentResponse.class;
             }
-            
+
             @Override
             public void handleFrame(StompHeaders headers, Object payload) {
                 DocumentResponse response = (DocumentResponse) payload;
                 documentId = response.getDocumentId();
                 isEditor = true;
-                
+
                 // Subscribe to document events after creation
                 subscribeToDocument(documentId);
-                
-                callback.onDocumentCreated(response.getDocumentId(), 
-                                         response.getEditorCode(), 
-                                         response.getViewerCode());
+
+                callback.onDocumentCreated(response.getDocumentId(),
+                        response.getEditorCode(),
+                        response.getViewerCode());
             }
         });
     }
-    
+
     /**
      * Join an existing document with a sharing code
+     * 
      * @param sharingCode The code for joining the document (editor or viewer)
      */
     public void joinDocument(String sharingCode) {
@@ -139,7 +149,7 @@ public class ClientSocket {
             callback.onError("Invalid sharing code");
             return;
         }
-        
+
         if (stompSession == null || !stompSession.isConnected()) {
             if (connect()) {
                 requestJoinDocument(sharingCode);
@@ -150,44 +160,45 @@ public class ClientSocket {
             requestJoinDocument(sharingCode);
         }
     }
-    
+
     private void requestJoinDocument(String sharingCode) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("userId", userId);
         payload.put("username", username);
         payload.put("sharingCode", sharingCode);
-        
+
         stompSession.send("/app/joinDocument", payload);
-        
+
         // Subscribe to join response
         stompSession.subscribe("/user/queue/joinResponse", new StompSessionHandlerAdapter() {
             @Override
             public Type getPayloadType(StompHeaders headers) {
                 return JoinResponse.class;
             }
-            
+
             @Override
             public void handleFrame(StompHeaders headers, Object payload) {
                 JoinResponse response = (JoinResponse) payload;
                 if (response.isSuccess()) {
                     documentId = response.getDocumentId();
                     isEditor = response.isEditor();
-                    
+
                     // Subscribe to document events after joining
                     subscribeToDocument(documentId);
-                    
-                    callback.onDocumentJoined(response.getDocumentId(), 
-                                            response.isEditor(),
-                                            response.getInitialContent());
+
+                    callback.onDocumentJoined(response.getDocumentId(),
+                            response.isEditor(),
+                            response.getInitialContent());
                 } else {
                     callback.onError("Failed to join document: " + response.getErrorMessage());
                 }
             }
         });
     }
-    
+
     /**
      * Subscribe to all relevant document events
+     * 
      * @param docId The document ID to subscribe to
      */
     private void subscribeToDocument(String docId) {
@@ -195,14 +206,14 @@ public class ClientSocket {
             callback.onError("Invalid document ID");
             return;
         }
-        
+
         // Subscribe to CRDT operations
         stompSession.subscribe("/topic/document/" + docId + "/operations", new StompSessionHandlerAdapter() {
             @Override
             public Type getPayloadType(StompHeaders headers) {
                 return CRDTOperation.class;
             }
-            
+
             @Override
             public void handleFrame(StompHeaders headers, Object payload) {
                 CRDTOperation operation = (CRDTOperation) payload;
@@ -212,14 +223,14 @@ public class ClientSocket {
                 }
             }
         });
-        
+
         // Subscribe to cursor updates
         stompSession.subscribe("/topic/document/" + docId + "/cursors", new StompSessionHandlerAdapter() {
             @Override
             public Type getPayloadType(StompHeaders headers) {
                 return CursorUpdate.class;
             }
-            
+
             @Override
             public void handleFrame(StompHeaders headers, Object payload) {
                 CursorUpdate cursorUpdate = (CursorUpdate) payload;
@@ -229,14 +240,14 @@ public class ClientSocket {
                 }
             }
         });
-        
+
         // Subscribe to user presence updates
         stompSession.subscribe("/topic/document/" + docId + "/users", new StompSessionHandlerAdapter() {
             @Override
             public Type getPayloadType(StompHeaders headers) {
                 return UserPresenceUpdate.class;
             }
-            
+
             @Override
             public void handleFrame(StompHeaders headers, Object payload) {
                 UserPresenceUpdate presenceUpdate = (UserPresenceUpdate) payload;
@@ -244,9 +255,10 @@ public class ClientSocket {
             }
         });
     }
-    
+
     /**
      * Send a text operation to the server
+     * 
      * @param operation The CRDT operation to send
      */
     public void sendOperation(CRDTOperation operation) {
@@ -254,12 +266,12 @@ public class ClientSocket {
             callback.onError("You don't have permission to edit this document");
             return;
         }
-        
+
         if (documentId == null) {
             callback.onError("Not connected to any document");
             return;
         }
-        
+
         if (stompSession == null || !stompSession.isConnected()) {
             // Store operation for later if we're disconnected
             pendingOperations.add(operation);
@@ -269,29 +281,30 @@ public class ClientSocket {
             }
             return;
         }
-        
+
         String destination = "/app/document/" + documentId + "/operation";
         stompSession.send(destination, operation);
     }
-    
+
     /**
      * Update cursor position
+     * 
      * @param position The cursor position in the document
      */
     public void updateCursorPosition(int position) {
         if (stompSession == null || !stompSession.isConnected()) {
             return; // Don't queue cursor updates
         }
-        
+
         if (documentId == null) {
             return; // Can't send cursor updates without a document
         }
-        
+
         CursorUpdate cursorUpdate = new CursorUpdate(userId, username, position);
         String destination = "/app/document/" + documentId + "/cursor";
         stompSession.send(destination, cursorUpdate);
     }
-    
+
     /**
      * Schedule periodic reconnection attempts
      */
@@ -303,30 +316,30 @@ public class ClientSocket {
                     System.out.println("Attempting to reconnect... (" + (i + 1) + "/60)");
                     if (connect()) {
                         isReconnecting = false;
-                        
+
                         // Resubscribe to document
                         if (documentId != null) {
                             subscribeToDocument(documentId);
-                            
+
                             // Send any pending operations
                             List<CRDTOperation> operationsToSend;
                             synchronized (pendingOperations) {
                                 operationsToSend = new ArrayList<>(pendingOperations);
                                 pendingOperations.clear();
                             }
-                            
+
                             for (CRDTOperation op : operationsToSend) {
                                 sendOperation(op);
                             }
-                            
+
                             callback.onReconnected();
                         }
                         return;
                     }
-                    
+
                     Thread.sleep(5000); // Wait 5 seconds before retrying
                 }
-                
+
                 // If we couldn't reconnect after 5 minutes
                 isReconnecting = false;
                 callback.onDisconnected("Could not reconnect after 5 minutes");
@@ -336,27 +349,27 @@ public class ClientSocket {
             }
         }).start();
     }
-    
+
     /**
      * Close the WebSocket connection
      */
     public void disconnect() {
         isReconnecting = false; // Stop any reconnection attempts
-        
+
         if (stompSession != null) {
             // Send a leave message if we're in a document
             if (documentId != null) {
                 Map<String, Object> payload = new HashMap<>();
                 payload.put("userId", userId);
                 payload.put("documentId", documentId);
-                
+
                 try {
                     stompSession.send("/app/leaveDocument", payload);
                 } catch (Exception e) {
                     System.err.println("Error sending leave message: " + e.getMessage());
                 }
             }
-            
+
             try {
                 stompSession.disconnect();
                 System.out.println("Disconnected from server");
@@ -366,7 +379,7 @@ public class ClientSocket {
                 stompSession = null;
             }
         }
-        
+
         if (sockJsClient != null) {
             try {
                 sockJsClient.stop();
@@ -376,13 +389,13 @@ public class ClientSocket {
                 sockJsClient = null;
             }
         }
-        
+
         // Clear document state
         documentId = null;
         isEditor = false;
         pendingOperations.clear();
     }
-    
+
     /**
      * Session handler for STOMP connections
      */
@@ -391,113 +404,191 @@ public class ClientSocket {
         public void afterConnected(StompSession session, StompHeaders connectedHeaders) {
             System.out.println("Connected to WebSocket server");
         }
-        
+
         @Override
-        public void handleException(StompSession session, StompCommand command, 
-                                   StompHeaders headers, byte[] payload, Throwable exception) {
+        public void handleException(StompSession session, StompCommand command,
+                StompHeaders headers, byte[] payload, Throwable exception) {
             System.err.println("WebSocket error: " + exception.getMessage());
             exception.printStackTrace();
         }
-        
+
         @Override
         public void handleTransportError(StompSession session, Throwable exception) {
             System.err.println("WebSocket transport error: " + exception.getMessage());
-            
+
             if (!isReconnecting) {
                 isReconnecting = true;
                 scheduleReconnection();
             }
         }
     }
-    
+
     // Helper model classes for WebSocket communication
     public static class DocumentResponse {
         private String documentId;
         private String editorCode;
         private String viewerCode;
-        
-        public String getDocumentId() { return documentId; }
-        public void setDocumentId(String documentId) { this.documentId = documentId; }
-        
-        public String getEditorCode() { return editorCode; }
-        public void setEditorCode(String editorCode) { this.editorCode = editorCode; }
-        
-        public String getViewerCode() { return viewerCode; }
-        public void setViewerCode(String viewerCode) { this.viewerCode = viewerCode; }
+
+        public String getDocumentId() {
+            return documentId;
+        }
+
+        public void setDocumentId(String documentId) {
+            this.documentId = documentId;
+        }
+
+        public String getEditorCode() {
+            return editorCode;
+        }
+
+        public void setEditorCode(String editorCode) {
+            this.editorCode = editorCode;
+        }
+
+        public String getViewerCode() {
+            return viewerCode;
+        }
+
+        public void setViewerCode(String viewerCode) {
+            this.viewerCode = viewerCode;
+        }
     }
-    
+
     public static class JoinResponse {
         private boolean success;
         private String documentId;
         private boolean isEditor;
         private String initialContent;
         private String errorMessage;
-        
-        public boolean isSuccess() { return success; }
-        public void setSuccess(boolean success) { this.success = success; }
-        
-        public String getDocumentId() { return documentId; }
-        public void setDocumentId(String documentId) { this.documentId = documentId; }
-        
-        public boolean isEditor() { return isEditor; }
-        public void setEditor(boolean isEditor) { this.isEditor = isEditor; }
-        
-        public String getInitialContent() { return initialContent; }
-        public void setInitialContent(String initialContent) { this.initialContent = initialContent; }
-        
-        public String getErrorMessage() { return errorMessage; }
-        public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
+
+        public boolean isSuccess() {
+            return success;
+        }
+
+        public void setSuccess(boolean success) {
+            this.success = success;
+        }
+
+        public String getDocumentId() {
+            return documentId;
+        }
+
+        public void setDocumentId(String documentId) {
+            this.documentId = documentId;
+        }
+
+        public boolean isEditor() {
+            return isEditor;
+        }
+
+        public void setEditor(boolean isEditor) {
+            this.isEditor = isEditor;
+        }
+
+        public String getInitialContent() {
+            return initialContent;
+        }
+
+        public void setInitialContent(String initialContent) {
+            this.initialContent = initialContent;
+        }
+
+        public String getErrorMessage() {
+            return errorMessage;
+        }
+
+        public void setErrorMessage(String errorMessage) {
+            this.errorMessage = errorMessage;
+        }
     }
-    
+
     public static class CursorUpdate {
         private String userId;
         private String username;
         private int position;
-        
-        public CursorUpdate() {}
-        
+
+        public CursorUpdate() {
+        }
+
         public CursorUpdate(String userId, String username, int position) {
             this.userId = userId;
             this.username = username;
             this.position = position;
         }
-        
-        public String getUserId() { return userId; }
-        public void setUserId(String userId) { this.userId = userId; }
-        
-        public String getUsername() { return username; }
-        public void setUsername(String username) { this.username = username; }
-        
-        public int getPosition() { return position; }
-        public void setPosition(int position) { this.position = position; }
+
+        public String getUserId() {
+            return userId;
+        }
+
+        public void setUserId(String userId) {
+            this.userId = userId;
+        }
+
+        public String getUsername() {
+            return username;
+        }
+
+        public void setUsername(String username) {
+            this.username = username;
+        }
+
+        public int getPosition() {
+            return position;
+        }
+
+        public void setPosition(int position) {
+            this.position = position;
+        }
     }
-    
+
     public static class UserPresenceUpdate {
         private String userId;
         private String username;
         private boolean isJoining;
-        
-        public String getUserId() { return userId; }
-        public void setUserId(String userId) { this.userId = userId; }
-        
-        public String getUsername() { return username; }
-        public void setUsername(String username) { this.username = username; }
-        
-        public boolean isJoining() { return isJoining; }
-        public void setJoining(boolean isJoining) { this.isJoining = isJoining; }
+
+        public String getUserId() {
+            return userId;
+        }
+
+        public void setUserId(String userId) {
+            this.userId = userId;
+        }
+
+        public String getUsername() {
+            return username;
+        }
+
+        public void setUsername(String username) {
+            this.username = username;
+        }
+
+        public boolean isJoining() {
+            return isJoining;
+        }
+
+        public void setJoining(boolean isJoining) {
+            this.isJoining = isJoining;
+        }
     }
-    
+
     /**
      * Callback interface for UI updates
      */
     public interface TextEditorCallback {
         void onDocumentCreated(String documentId, String editorCode, String viewerCode);
+
         void onDocumentJoined(String documentId, boolean isEditor, String initialContent);
+
         void onRemoteOperation(CRDTOperation operation);
+
         void onCursorUpdate(CursorUpdate cursorUpdate);
+
         void onUserPresenceUpdate(UserPresenceUpdate presenceUpdate);
+
         void onReconnected();
+
         void onDisconnected(String reason);
+
         void onError(String message);
     }
 }

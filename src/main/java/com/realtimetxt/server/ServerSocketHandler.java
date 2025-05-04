@@ -136,7 +136,7 @@ public class ServerSocketHandler {
 
         // Validate user is in the correct document with edit permissions
         if (!documentId.equals(sessionManager.getUserDocument(userId)) ||
-                !"editor".equals(sessionManager.getUserRole(userId))) {
+                !"editor".equals(sessionManager.getUserRole(userId, documentId))) {
             return;
         }
 

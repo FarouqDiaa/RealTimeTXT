@@ -16,9 +16,12 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import com.realtimetxt.client.logic.CRDTController;
+import com.realtimetxt.client.network.ClientSocket;
+import com.realtimetxt.shared.CRDTOperation;
 
 public class EditorUI {
 
+    private ClientSocket clientSocket;
     private Stage primaryStage;
     private TextArea textArea;
     private VBox userListBox;
@@ -33,6 +36,7 @@ public class EditorUI {
 
     private final Map<String, UserCaret> remoteCursors = new ConcurrentHashMap<>();
 
+    // ...existing code...
     public EditorUI(Stage stage) {
         this.primaryStage = stage;
 
@@ -44,6 +48,69 @@ public class EditorUI {
 
         dialog.showAndWait().ifPresent(name -> {
             currentUser = name;
+            this.clientSocket = new ClientSocket(name, new ClientSocket.TextEditorCallback() {
+                @Override
+                public void onDocumentCreated(String documentId, String editorCode, String viewerCode) {
+                    Platform.runLater(() -> {
+                        setEditorCode(editorCode);
+                        setViewerCode(viewerCode);
+                        showNotification("New document created with ID: " + documentId);
+                    });
+                }
+
+                @Override
+                public void onDocumentJoined(String documentId, boolean isEditor, String initialContent) {
+                    Platform.runLater(() -> {
+                        showNotification("Joined document: " + documentId);
+                        textArea.setText(initialContent);
+                    });
+                }
+
+                @Override
+                public void onRemoteOperation(CRDTOperation operation) {
+                    Platform.runLater(() -> {
+                        showNotification("Remote operation received");
+                        // TODO: Apply the CRDT operation to the local document
+                    });
+                }
+
+                @Override
+                public void onCursorUpdate(ClientSocket.CursorUpdate cursorUpdate) {
+                    Platform.runLater(() -> {
+                        showNotification("Cursor updated for user: " + cursorUpdate.getUserId());
+                        addRemoteCursor(cursorUpdate.getUserId(), cursorUpdate.getPosition(), Color.BLUE);
+                    });
+                }
+
+                @Override
+                public void onUserPresenceUpdate(ClientSocket.UserPresenceUpdate presenceUpdate) {
+                    Platform.runLater(() -> {
+                        showNotification("User presence updated: " + presenceUpdate.getUserId());
+                        updateUserList();
+                    });
+                }
+
+                @Override
+                public void onReconnected() {
+                    Platform.runLater(() -> {
+                        showNotification("Reconnected to the server");
+                    });
+                }
+
+                @Override
+                public void onDisconnected(String reason) {
+                    Platform.runLater(() -> {
+                        showAlert("Disconnected: " + reason);
+                    });
+                }
+
+                @Override
+                public void onError(String error) {
+                    Platform.runLater(() -> {
+                        showAlert(error);
+                    });
+                }
+            });
         });
 
         initUI();
@@ -64,20 +131,23 @@ public class EditorUI {
     // ──────────────────────────────── Menu Bar (Collaboration & File)
     // ────────────────────────────────
     private String fetchViewerCodeFromServer() {
-        // Simulate fetching viewer code from the server
-        // TODO : Implement actual server call to fetch viewer code
-        // For now, iam return a hardcoded value
-        // return clientSocket.requestSessionCode("viewer"); //copilot suggest me this
+        if (clientSocket == null || !clientSocket.connect()) {
+            showAlert("Failed to connect to server");
+            return "";
+        }
 
-        return "#newViewerCode"; // this is a placeholder
+        clientSocket.createNewDocument();
+        // The codes will be set via the callback in onDocumentCreated
+        // viewerCode = "t3bt";
+        return viewerCode;
     }
 
     private String fetchEditorCodeFromServer() {
         // Simulate fetching editor code from the server
         // TODO : Implement actual server call to fetch editor code
         // For now, iam return a hardcoded value
-        // return clientSocket.requestSessionCode("editor"); //copilot suggest me this
-        return "#newEditorCode"; // this is a placeholder
+        // editorCode = "t3bt2";// this is a placeholder
+        return editorCode;
     }
 
     private MenuBar createMenuBar() {
@@ -132,9 +202,17 @@ public class EditorUI {
         dialog.setContentText("Session Code:");
 
         dialog.showAndWait().ifPresent(code -> {
-            showNotification("Joined session with code: " + code);
-            // Placeholder: pass code to collaboration logic
-            // TODO: Implement actual join session logic
+            if (clientSocket != null) {
+                // Connect if not already connected
+                if (!clientSocket.isConnected()) {
+                    clientSocket.connect();
+                }
+                // Actually join the document with the entered code
+                clientSocket.joinDocument(code);
+                showNotification("Attempting to join session with code: " + code);
+            } else {
+                showAlert("Client socket not initialized");
+            }
         });
     }
 

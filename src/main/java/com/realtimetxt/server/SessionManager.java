@@ -8,6 +8,9 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListSet;
 
+import org.springframework.stereotype.Component;
+
+@Component
 public class SessionManager {
 
     private final Map<String, String> codeOfDocument = new ConcurrentHashMap<>();
@@ -46,6 +49,11 @@ public class SessionManager {
         usersRoles.computeIfAbsent(userId, k -> new ConcurrentHashMap<>()).put(docId, role);
 
         return true;
+    }
+
+    public boolean isValidCode(String code) {
+        // Add logic to validate the code
+        return code != null && !code.isEmpty(); // Example logic
     }
 
     public String getUserDocument(String userId) {
