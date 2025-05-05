@@ -12,6 +12,7 @@ import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 
 import java.io.*;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -99,9 +100,11 @@ public class EditorUI implements ClientSocket.TextEditorCallback {
                 }
 
                 @Override
-                public void onDocumentJoined(String documentId, boolean isEditor, String initialContent) {
+                public void onDocumentJoined(String documentId, boolean isEditor, List<CRDTOperation> initialOperations) {
                     Platform.runLater(() -> {
                         showNotification("Joined document: " + documentId);
+                        //String initialContent = crdtController.applyOperations(initialOperations);
+                        String initialContent = ""; // TODO: Implement the logic to apply operations and get the initial content
                         textArea.setText(initialContent);
                     });
                 }
@@ -424,8 +427,8 @@ public class EditorUI implements ClientSocket.TextEditorCallback {
         String text = textArea.getText(); // Get the all text from the TextArea
         position = Math.min(position, text.length()); // Ensure position is within bounds
         return (int) text.substring(0, position).chars().filter(ch -> ch == '\n').count() + 1; // Count the number of
-                                                                                               // newlines before the
-                                                                                               // position
+        // newlines before the
+        // position
     }
 
     // ──────────────────────────────── Text Updates & Codes
@@ -464,7 +467,7 @@ public class EditorUI implements ClientSocket.TextEditorCallback {
     }
 
     @Override
-    public void onDocumentJoined(String documentId, boolean isEditor, String viewerCode) {
+    public void onDocumentJoined(String documentId, boolean isEditor, List<CRDTOperation> initialOperations) {
         setViewerCode(viewerCode);
         if (isEditor) {
             setEditorCode(editorCode);
@@ -482,6 +485,7 @@ public class EditorUI implements ClientSocket.TextEditorCallback {
     }
 
     public static class UserCaret {
+
         private int position;
         private final Color color;
 
