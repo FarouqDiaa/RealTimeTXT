@@ -301,6 +301,12 @@ public class EditorUI {
 
         textArea.caretPositionProperty().addListener((observable, oldValue, newValue) -> {
             // Update the remote cursor position
+            if (clientSocket != null && clientSocket.isConnected()) {
+                
+            }
+            // Update the local cursor position
+            remoteCursors.put(currentUser, new UserCaret(newValue.intValue()));
+            updateRemoteCursors();
 
         });
 
@@ -453,6 +459,7 @@ public class EditorUI {
 
     private void updateRemoteCursors() {
         // TODO: Update the remote cursors in the text area
+
     }
 
     private void updateUserList() {
