@@ -59,6 +59,8 @@ public class EditorUI {
                     Platform.runLater(() -> {
                         showNotification("User presence updated: " + presenceUpdate);
                         // TODO: Handle user presence update logic here
+                        remoteCursors.put(currentUser, new UserCaret(0));
+                        updateUserList();
                     });
                 }
 
@@ -83,6 +85,11 @@ public class EditorUI {
 
                         // Disable editing if the user is a viewer
                         textArea.setEditable(!isViewer);
+                        messageLabel.setText(isViewer ? "You are a viewer. Editing is disabled." : "");
+
+                        // add new user to the user list
+                        remoteCursors.put(currentUser, new UserCaret(0));
+                        updateUserList();
                     });
                 }
 
@@ -426,7 +433,7 @@ public class EditorUI {
         remoteCursors.forEach((userId, caret) -> {
             int line = getLineNumber(caret.getPosition());
             Label label = new Label(userId + " - line " + line);
-            userListBox.getChildren().add(new HBox(5, label));
+            userListBox.getChildren().add(new HBox(5, label)); // Add a space between the label and the caret position
         });
     }
 
