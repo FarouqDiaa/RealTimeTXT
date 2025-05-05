@@ -18,20 +18,19 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         // Enable a simple memory-based message broker for sending messages to clients
         // Prefix with /topic for broadcasts and /queue for user-specific messages
         registry.enableSimpleBroker("/topic", "/queue");
-        
+
         // Prefix for application destination paths (controller methods)
         registry.setApplicationDestinationPrefixes("/app");
-        
+
         // User destination prefix for user-specific messages
-        registry.setUserDestinationPrefix("/user");
     }
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         // Register the /ws endpoint for WebSocket connections
         registry
-            .addEndpoint("/ws")
-            .setAllowedOrigins("*") // In production, restrict to your domain
-            .withSockJS(); // Enable SockJS fallback options
+                .addEndpoint("/ws")
+                .setAllowedOrigins("*") // In production, restrict to your domain
+                .withSockJS(); // Enable SockJS fallback options
     }
 }

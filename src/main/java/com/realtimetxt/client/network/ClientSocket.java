@@ -11,7 +11,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
-import org.springframework.boot.autoconfigure.integration.IntegrationProperties.RSocket.Client;
 import org.springframework.messaging.converter.CompositeMessageConverter;
 import org.springframework.messaging.converter.MappingJackson2MessageConverter;
 import org.springframework.messaging.converter.MessageConverter;
@@ -33,6 +32,7 @@ import com.realtimetxt.shared.CRDTOperation;
  * Client WebSocket handler for collaborative text editor using STOMP protocol
  */
 public class ClientSocket {
+
     private final String SERVER_URL = "ws://localhost:8080/ws";
     private final int SOCKET_TIMEOUT = 5000; // 5 seconds
 
@@ -48,25 +48,23 @@ public class ClientSocket {
 
     /**
      * Constructor
-     * 
+     *
      * @param username The user's display name
      * @param callback Callback interface for UI updates
      */
-    public ClientSocket(String username, TextEditorCallback callback) {
+    public ClientSocket(String username, String userId, TextEditorCallback callback) {
         this.username = username;
-        this.userId = UUID.randomUUID().toString();
+        this.userId = userId;
         this.callback = callback;
     }
 
-    // Add this method to the ClientSocket class
     public boolean isConnected() {
-        // Implement logic to check if the socket is connected
-        return stompSession != null && stompSession.isConnected(); // Check if the STOMP session is connected
+        return stompSession != null && stompSession.isConnected();
     }
 
     /**
      * Connect to the WebSocket server
-     * 
+     *
      * @return true if connection is successful, false otherwise
      */
     public boolean connect() {
@@ -118,18 +116,31 @@ public class ClientSocket {
         stompSession.send("/app/createDocument", payload);
 
         // Subscribe to document creation response
-        stompSession.subscribe("/user/queue/documentCreated", new StompSessionHandlerAdapter() {
+        stompSession.subscribe("/topic/createResponse/" + userId, new StompSessionHandlerAdapter() {
             @Override
             public Type getPayloadType(StompHeaders headers) {
-                return Map.class; // Assuming the response is a Map
+                return Map.class;
             }
 
             @Override
             public void handleFrame(StompHeaders headers, Object payload) {
                 Map<String, Object> response = (Map<String, Object>) payload;
-                if (response == null || !response.containsKey("documentId") ||
-                        !response.containsKey("editorCode") || !response.containsKey("viewerCode")) {
-                    callback.onError("Invalid response from server: " + response);
+                if (response == null || !response.containsKey("success")) {
+                    callback.onError("Invalid response from server");
+                    return;
+                }
+
+                boolean success = (boolean) response.get("success");
+                if (!success) {
+                    String errorMessage = response.containsKey("errorMessage")
+                            ? (String) response.get("errorMessage") : "Unknown error";
+                    callback.onError("Failed to create document: " + errorMessage);
+                    return;
+                }
+
+                if (!response.containsKey("documentId") || !response.containsKey("editorCode")
+                        || !response.containsKey("viewerCode")) {
+                    callback.onError("Invalid server response: missing document information");
                     return;
                 }
 
@@ -147,7 +158,7 @@ public class ClientSocket {
 
     /**
      * Join an existing document with a sharing code
-     * 
+     *
      * @param sharingCode The code for joining the document (editor or viewer)
      */
     public void joinDocument(String sharingCode) {
@@ -176,32 +187,53 @@ public class ClientSocket {
         stompSession.send("/app/joinDocument", payload);
 
         // Subscribe to join response
-        stompSession.subscribe("/user/queue/joinResponse", new StompSessionHandlerAdapter() {
+        stompSession.subscribe("/topic/joinResponse/" + userId, new StompSessionHandlerAdapter() {
             @Override
             public Type getPayloadType(StompHeaders headers) {
                 return Map.class;
-
             }
 
             @Override
             public void handleFrame(StompHeaders headers, Object payload) {
                 Map<String, Object> response = (Map<String, Object>) payload;
-                if ((boolean) response.get("success")) {
-                    documentId = response.get("documentId").toString();
-                    isEditor = (boolean) response.get("isEditor");
-                    String initialContent = response.get("existingData").toString();
-                    subscribeToDocument(documentId);
-                    callback.onDocumentJoined(documentId, isEditor, initialContent);
-                } else {
-                    callback.onError("Failed to join document: ");
+                if (response == null || !response.containsKey("success")) {
+                    callback.onError("Invalid response from server");
+                    return;
                 }
+
+                boolean success = (boolean) response.get("success");
+                if (!success) {
+                    String errorMessage = response.containsKey("errorMessage")
+                            ? (String) response.get("errorMessage") : "Unknown error";
+                    callback.onError("Failed to join document: " + errorMessage);
+                    return;
+                }
+
+                documentId = response.get("documentId").toString();
+                isEditor = (boolean) response.get("isEditor");
+
+                // Handle existing data if available
+                List<CRDTOperation> existingOperations = new ArrayList<>();
+                if (response.containsKey("existingData")) {
+                    // Server might send existing data as a list of operations
+                    Object existingData = response.get("existingData");
+                    if (existingData instanceof List) {
+                        existingOperations = (List<CRDTOperation>) existingData;
+                    }
+                }
+
+                // Subscribe to document events
+                subscribeToDocument(documentId);
+
+                // Notify UI that we've joined
+                callback.onDocumentJoined(documentId, isEditor, existingOperations);
             }
         });
     }
 
     /**
      * Subscribe to all relevant document events
-     * 
+     *
      * @param docId The document ID to subscribe to
      */
     private void subscribeToDocument(String docId) {
@@ -245,7 +277,7 @@ public class ClientSocket {
 
     /**
      * Send a text operation to the server
-     * 
+     *
      * @param operation The CRDT operation to send
      */
     public void sendOperation(CRDTOperation operation) {
@@ -330,6 +362,7 @@ public class ClientSocket {
                 Map<String, Object> payload = new HashMap<>();
                 payload.put("userId", userId);
                 payload.put("documentId", documentId);
+                payload.put("username", username);
 
                 try {
                     stompSession.send("/app/leaveDocument", payload);
@@ -368,6 +401,7 @@ public class ClientSocket {
      * Session handler for STOMP connections
      */
     private class EditorStompSessionHandler extends StompSessionHandlerAdapter {
+
         @Override
         public void afterConnected(StompSession session, StompHeaders connectedHeaders) {
             System.out.println("Connected to WebSocket server");
@@ -395,9 +429,10 @@ public class ClientSocket {
      * Callback interface for UI updates
      */
     public interface TextEditorCallback {
+
         void onDocumentCreated(String documentId, String editorCode, String viewerCode);
 
-        void onDocumentJoined(String documentId, boolean isEditor, String initialContent);
+        void onDocumentJoined(String documentId, boolean isEditor, List<CRDTOperation> existingOperations);
 
         void onRemoteOperation(CRDTOperation operation);
 

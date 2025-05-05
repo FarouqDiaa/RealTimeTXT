@@ -12,43 +12,17 @@ import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 
 import java.io.*;
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.List;
 
 import com.realtimetxt.client.logic.CRDTController;
 import com.realtimetxt.client.network.ClientSocket;
 import com.realtimetxt.shared.CRDTOperation;
 
-public class EditorUI implements ClientSocket.TextEditorCallback {
-
-    @Override
-    public void onUserPresenceUpdate(Map<String, Object> presenceUpdate) {
-        Platform.runLater(() -> {
-            showNotification("User presence updated: " + presenceUpdate);
-            // TODO: Handle user presence update logic here
-        });
-    }
-
-    @Override
-    public void onReconnected() {
-        Platform.runLater(() -> {
-            showNotification("Reconnected to the server");
-        });
-    }
-
-    @Override
-    public void onDisconnected(String reason) {
-        Platform.runLater(() -> {
-            showAlert("Disconnected: " + reason);
-        });
-    }
-
-    @Override
-    public void onError(String error) {
-        Platform.runLater(() -> {
-            showAlert(error);
-        });
-    }
+public class EditorUI {
 
     private Stage primaryStage;
     private TextArea textArea;
@@ -77,12 +51,26 @@ public class EditorUI implements ClientSocket.TextEditorCallback {
 
         dialog.showAndWait().ifPresent(name -> {
             currentUser = name;
-            this.clientSocket = new ClientSocket(name, new ClientSocket.TextEditorCallback() {
+            String authenticatedUserId = UUID.randomUUID().toString(); // Generate a random ID for this user
+            this.clientSocket = new ClientSocket(name, authenticatedUserId, new ClientSocket.TextEditorCallback() {
                 @Override
                 public void onUserPresenceUpdate(Map<String, Object> presenceUpdate) {
                     Platform.runLater(() -> {
                         showNotification("User presence updated: " + presenceUpdate);
                         // TODO: Handle user presence update logic here
+                    });
+                }
+
+                @Override
+                public void onDocumentJoined(String documentId, boolean isEditor, List<CRDTOperation> operations) {
+                    Platform.runLater(() -> {
+                        showNotification("Joined document: " + documentId);
+                        StringBuilder initialContent = new StringBuilder();
+                        for (CRDTOperation operation : operations) {
+                            crdtController.onRemoteOperation(operation);
+                        }
+                        initialContent.append(crdtController.renderText());
+                        textArea.setText(initialContent.toString());
                     });
                 }
 
@@ -93,14 +81,6 @@ public class EditorUI implements ClientSocket.TextEditorCallback {
                         setEditorCode(editorCode);
                         setViewerCode(viewerCode);
                         showNotification("New document created with ID: " + documentId);
-                    });
-                }
-
-                @Override
-                public void onDocumentJoined(String documentId, boolean isEditor, String initialContent) {
-                    Platform.runLater(() -> {
-                        showNotification("Joined document: " + documentId);
-                        textArea.setText(initialContent);
                     });
                 }
 
@@ -424,8 +404,8 @@ public class EditorUI implements ClientSocket.TextEditorCallback {
         String text = textArea.getText(); // Get the all text from the TextArea
         position = Math.min(position, text.length()); // Ensure position is within bounds
         return (int) text.substring(0, position).chars().filter(ch -> ch == '\n').count() + 1; // Count the number of
-                                                                                               // newlines before the
-                                                                                               // position
+        // newlines before the
+        // position
     }
 
     // ──────────────────────────────── Text Updates & Codes
@@ -454,34 +434,8 @@ public class EditorUI implements ClientSocket.TextEditorCallback {
         Platform.runLater(() -> editorCodeLabel.setText(code));
     }
 
-    // ──────────────────────────────── Client Socket Callbacks
-    // ────────────────────────────────
-    @Override
-    public void onDocumentCreated(String documentId, String viewerCode, String editorCode) {
-        setViewerCode(viewerCode);
-        setEditorCode(editorCode);
-        showNotification("Document created with ID: " + documentId);
-    }
-
-    @Override
-    public void onDocumentJoined(String documentId, boolean isEditor, String viewerCode) {
-        setViewerCode(viewerCode);
-        if (isEditor) {
-            setEditorCode(editorCode);
-        }
-        showNotification("Joined document with ID: " + documentId);
-    }
-
-    @Override
-    public void onRemoteOperation(CRDTOperation operation) {
-        crdtController.onRemoteOperation(operation);
-        Platform.runLater(() -> {
-            String newText = crdtController.renderText();
-            updateText(newText, true);
-        });
-    }
-
     public static class UserCaret {
+
         private int position;
         private final Color color;
 
