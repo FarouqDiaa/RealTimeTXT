@@ -125,7 +125,7 @@ public class ServerSocketHandler {
         Map<String, Object> userListMessage = new HashMap<>();
         userListMessage.put("users", manager.getDocumentUsers(documentId));
         System.out.println("kuf you from server" + userListMessage.get("users"));
-        messagingTemplate.convertAndSend("/topic/document/" + documentId + "/users", userListMessage);
+        messagingTemplate.convertAndSend("/topic/document/" + documentId + "/users", userListMessage.get("users"));
 
         // Ensure document data is initialized or apply existing data
         documentData.putIfAbsent(documentId, new CopyOnWriteArrayList<>());
@@ -139,7 +139,6 @@ public class ServerSocketHandler {
 
         messagingTemplate.convertAndSend("/topic/joinResponse/" + userId, response);
         messagingTemplate.convertAndSend("/topic/document/" + documentId, response);
-        notifyUserPresence(documentId, userId, username, true);
 
         System.out.println("User " + userId + " joined document " + documentId + " as " + roleType);
     }
@@ -292,7 +291,7 @@ public class ServerSocketHandler {
         // Send all currently active users to the joining user
         Map<String, Object> userListMessage = new HashMap<>();
         userListMessage.put("users", manager.getDocumentUsers(documentId));
-        messagingTemplate.convertAndSend("/topic/document/" + documentId + "/users", userListMessage);
+        messagingTemplate.convertAndSend("/topic/document/" + documentId + "/users", userListMessage.get("users"));
 
         System.out.println("User " + userId + " left document " + documentId);
     }
