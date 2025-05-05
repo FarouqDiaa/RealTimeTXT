@@ -268,19 +268,21 @@ public class ClientSocket {
         });
 
         // Subscribe to user presence updates
-            stompSession.subscribe("/topic/document/" + documentId + "/users", new StompSessionHandlerAdapter() {
-        @Override
-        public Type getPayloadType(StompHeaders headers) {
-            return Map.class;
-        }
-    
-        @Override
-        public void handleFrame(StompHeaders headers, Object payload) {
-            Map<String, Map<String,SessionManager.UserPresence>> presenceUpdate = (Map<String, Map<String,SessionManager.UserPresence>>) payload;
-            // Notify UI about user presence updates
-            callback.onUserPresenceUpdate(presenceUpdate.get("users")); 
-        }
-});
+        stompSession.subscribe("/topic/document/" + documentId + "/users", new StompSessionHandlerAdapter() {
+            @Override
+            public Type getPayloadType(StompHeaders headers) {
+                return Map.class;
+            }
+
+            @Override
+            public void handleFrame(StompHeaders headers, Object payload) {
+                System.out.println("Received user presence update: " + payload);
+                Map<String, Map<String, SessionManager.UserPresence>> presenceUpdate = (Map<String, Map<String, SessionManager.UserPresence>>) payload;
+                System.out.println("Parsed user presence update: " + presenceUpdate.get("users"));
+                // Notify UI about user presence updates
+                callback.onUserPresenceUpdate(presenceUpdate.get("users"));
+            }
+        });
     }
 
     /**
@@ -446,7 +448,7 @@ public class ClientSocket {
 
         void onRemoteOperation(CRDTOperation operation);
 
-        void onUserPresenceUpdate(Map<String,SessionManager.UserPresence> presenceUpdate);
+        void onUserPresenceUpdate(Map<String, SessionManager.UserPresence> presenceUpdate);
 
         void onReconnected();
 

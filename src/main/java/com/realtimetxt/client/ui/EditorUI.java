@@ -19,6 +19,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import com.realtimetxt.client.logic.CRDTController;
 import com.realtimetxt.client.network.ClientSocket;
+import com.realtimetxt.server.SessionManager;
 import com.realtimetxt.shared.CRDTOperation;
 
 public class EditorUI {
@@ -55,11 +56,14 @@ public class EditorUI {
             String authenticatedUserId = UUID.randomUUID().toString(); // Generate a random ID for this user
             this.clientSocket = new ClientSocket(name, authenticatedUserId, new ClientSocket.TextEditorCallback() {
                 @Override
-                public void onUserPresenceUpdate(Map<String, Object> presenceUpdate) {
+                public void onUserPresenceUpdate(Map<String, SessionManager.UserPresence> presenceUpdate) {
                     Platform.runLater(() -> {
                         showNotification("User presence updated: " + presenceUpdate);
                         // TODO: Handle user presence update logic here
-                        remoteCursors.put(currentUser, new UserCaret(0));
+
+                        String username = presenceUpdate.get(currentUser).getUsername();
+                        System.out.println("User Name: " + username);
+                        remoteCursors.put(username, new UserCaret(0));
                         updateUserList();
                     });
                 }
