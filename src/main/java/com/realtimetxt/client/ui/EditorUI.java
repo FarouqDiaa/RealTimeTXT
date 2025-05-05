@@ -443,9 +443,9 @@ public class EditorUI implements ClientSocket.TextEditorCallback {
 
     // ──────────────────────────────── Remote Cursor & User List
     // ────────────────────────────────
-    public void addRemoteCursor(String userId, int position, Color color) {
+    public void addRemoteCursor(String userId, int position) {
         Platform.runLater(() -> {
-            remoteCursors.put(userId, new UserCaret(position, color));
+            remoteCursors.put(userId, new UserCaret(position));
             updateRemoteCursors();
             updateUserList();
         });
@@ -471,7 +471,6 @@ public class EditorUI implements ClientSocket.TextEditorCallback {
         remoteCursors.forEach((userId, caret) -> {
             int line = getLineNumber(caret.getPosition());
             Label label = new Label(userId + " - line " + line);
-            label.setTextFill(caret.getColor());
             userListBox.getChildren().add(new HBox(5, label));
         });
     }
@@ -516,11 +515,9 @@ public class EditorUI implements ClientSocket.TextEditorCallback {
     public static class UserCaret {
 
         private int position;
-        private final Color color;
 
-        public UserCaret(int position, Color color) {
+        public UserCaret(int position) {
             this.position = position;
-            this.color = color;
         }
 
         public int getPosition() {
@@ -529,10 +526,6 @@ public class EditorUI implements ClientSocket.TextEditorCallback {
 
         public void setPosition(int position) {
             this.position = position;
-        }
-
-        public Color getColor() {
-            return color;
         }
     }
 }
