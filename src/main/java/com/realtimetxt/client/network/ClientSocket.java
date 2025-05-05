@@ -27,6 +27,7 @@ import org.springframework.web.socket.sockjs.client.WebSocketTransport;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.realtimetxt.server.SessionManager;
 import com.realtimetxt.shared.CRDTOperation;
 
 /**
@@ -267,19 +268,19 @@ public class ClientSocket {
         });
 
         // Subscribe to user presence updates
-        stompSession.subscribe("/topic/document/" + docId + "/users", new StompSessionHandlerAdapter() {
-            @Override
-            public Type getPayloadType(StompHeaders headers) {
-                return Map.class;
-            }
-
-            @Override
-            public void handleFrame(StompHeaders headers, Object payload) {
-                Map<String, Object> presenceUpdate = (Map<String, Object>) payload;
-                // Notify UI about user presence updates
-                callback.onUserPresenceUpdate(presenceUpdate);
-            }
-        });
+            stompSession.subscribe("/topic/document/" + documentId + "/users", new StompSessionHandlerAdapter() {
+        @Override
+        public Type getPayloadType(StompHeaders headers) {
+            return Map.class;
+        }
+    
+        @Override
+        public void handleFrame(StompHeaders headers, Object payload) {
+            Map<String, Map<String,SessionManager.UserPresence>> presenceUpdate = (Map<String, Map<String,SessionManager.UserPresence>>) payload;
+            // Notify UI about user presence updates
+            callback.onUserPresenceUpdate(presenceUpdate.get("users")); 
+        }
+});
     }
 
     /**
@@ -445,7 +446,7 @@ public class ClientSocket {
 
         void onRemoteOperation(CRDTOperation operation);
 
-        void onUserPresenceUpdate(Map<String, Object> presenceUpdate);
+        void onUserPresenceUpdate(Map<String,SessionManager.UserPresence> presenceUpdate);
 
         void onReconnected();
 

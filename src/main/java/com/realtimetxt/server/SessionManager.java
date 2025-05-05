@@ -43,6 +43,67 @@ public class SessionManager {
      * participating in.
      */
     private Map<String, Map<String, String>> usersRoles = new ConcurrentHashMap<>();
+    // Add to SessionManager.java
+    private final Map<String, Map<String, UserPresence>> documentUsers = new ConcurrentHashMap<>();
+
+    public static class UserPresence {
+        private String userId;
+        private String username;
+        private boolean isEditor;
+        private long lastActive;
+
+        public UserPresence(String userId, String username, boolean isEditor, long lastActive) {
+            this.userId = userId;
+            this.username = username;
+            this.isEditor = isEditor;
+            this.lastActive = lastActive;
+        }
+        
+        public String getUserId() {
+            return userId;
+        }
+        
+        public String getUsername() {
+            return username;
+        }
+        
+        public boolean isEditor() {
+            return isEditor;
+        }
+        
+        public long getLastActive() {
+            return lastActive;
+        }
+        
+        public void setLastActive(long lastActive) {
+            this.lastActive = lastActive;
+        }
+    }
+
+    // Add user to document
+    public void addUserToDocument(String documentId, String userId, String username, boolean isEditor) {
+        documentUsers.computeIfAbsent(documentId, k -> new ConcurrentHashMap<>())
+            .put(userId, new UserPresence(userId, username, isEditor, System.currentTimeMillis()));
+    }
+
+    // Remove user from document
+    public void removeUserFromDocument(String documentId, String userId) {
+        if (documentUsers.containsKey(documentId)) {
+            documentUsers.get(documentId).remove(userId);
+        }
+    }
+
+    // Get all users in a document
+    public Map<String, UserPresence> getDocumentUsers(String documentId) {
+        return documentUsers.getOrDefault(documentId, new ConcurrentHashMap<>());
+    }
+
+    // Update user's last active timestamp
+    public void updateUserActivity(String documentId, String userId) {
+        if (documentUsers.containsKey(documentId) && documentUsers.get(documentId).containsKey(userId)) {
+            documentUsers.get(documentId).get(userId).setLastActive(System.currentTimeMillis());
+        }
+    }
 
     public Map<String, String> createSession(String documentId) {
         String editorCode = generateUniqueCode();
