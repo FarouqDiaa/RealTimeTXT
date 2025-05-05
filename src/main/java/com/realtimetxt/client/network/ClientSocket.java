@@ -133,7 +133,8 @@ public class ClientSocket {
                 boolean success = (boolean) response.get("success");
                 if (!success) {
                     String errorMessage = response.containsKey("errorMessage")
-                            ? (String) response.get("errorMessage") : "Unknown error";
+                            ? (String) response.get("errorMessage")
+                            : "Unknown error";
                     callback.onError("Failed to create document: " + errorMessage);
                     return;
                 }
@@ -183,8 +184,9 @@ public class ClientSocket {
         payload.put("userId", userId);
         payload.put("username", username);
         payload.put("sharingCode", sharingCode);
-
+        System.out.println("Joining document with sharing code before send: " + sharingCode);
         stompSession.send("/app/joinDocument", payload);
+        System.out.println("Joining document with sharing code after send: " + sharingCode);
 
         // Subscribe to join response
         stompSession.subscribe("/topic/joinResponse/" + userId, new StompSessionHandlerAdapter() {
@@ -195,6 +197,7 @@ public class ClientSocket {
 
             @Override
             public void handleFrame(StompHeaders headers, Object payload) {
+                System.out.println("Received join response: ");
                 Map<String, Object> response = (Map<String, Object>) payload;
                 if (response == null || !response.containsKey("success")) {
                     callback.onError("Invalid response from server");
@@ -204,7 +207,8 @@ public class ClientSocket {
                 boolean success = (boolean) response.get("success");
                 if (!success) {
                     String errorMessage = response.containsKey("errorMessage")
-                            ? (String) response.get("errorMessage") : "Unknown error";
+                            ? (String) response.get("errorMessage")
+                            : "Unknown error";
                     callback.onError("Failed to join document: " + errorMessage);
                     return;
                 }
