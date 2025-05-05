@@ -287,9 +287,15 @@ public class EditorUI implements ClientSocket.TextEditorCallback {
                 if (!clientSocket.isConnected()) {
                     clientSocket.connect();
                 }
-                // Actually join the document with the entered code
+                // Attempt to join the document with the entered code
                 clientSocket.joinDocument(code);
-                showNotification("Attempting to join session with code: " + code);
+
+                // If join is successful, remove the message label
+                Platform.runLater(() -> {
+                    messageLabel.setText(""); // Clear the message
+                    textArea.setEditable(true); // Enable editing
+                    showNotification("Successfully joined session with code: " + code);
+                });
             } else {
                 showAlert("Client socket not initialized");
             }
