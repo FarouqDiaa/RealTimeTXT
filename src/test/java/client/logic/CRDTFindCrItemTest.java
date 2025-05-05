@@ -32,7 +32,7 @@ public class CRDTFindCrItemTest {
         // Test finding a non-existent item
         Assert.assertNull(crdt.findCrItem(UUID.randomUUID()));
     }
-    
+
     @Test
     public void testFindCrItemSecondLevelChild() {
         // Create a root item
@@ -61,7 +61,7 @@ public class CRDTFindCrItemTest {
 
         // Test finding a non-existent item
         Assert.assertNull(crdt.findCrItem(UUID.randomUUID()));
-        
+
         CRDTItem greatGrandChild1 = new CRDTItem(grandChild1, "greatGrandChild1");
         grandChild1.addChild(greatGrandChild1);
         Assert.assertEquals(greatGrandChild1, crdt.findCrItem(greatGrandChild1.getId()));
@@ -118,7 +118,7 @@ public class CRDTFindCrItemTest {
     @Test
     public void testFindCrItemEmptyTree() {
         // Create an empty CRDT
-        CRDT crdt = new CRDT(null);
+        CRDT crdt = new CRDT((CRDTItem) null);
 
         // Test finding a non-existent item in an empty tree
         Assert.assertNull(crdt.findCrItem(UUID.randomUUID()));

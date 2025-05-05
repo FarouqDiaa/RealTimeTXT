@@ -2,8 +2,10 @@ package com.realtimetxt.shared;
 
 import java.util.UUID;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.realtimetxt.shared.enums.OperationType;
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class CRDTOperation {
 
     private UUID uuid = UUID.randomUUID();
@@ -13,6 +15,9 @@ public class CRDTOperation {
     private String value = null;
     private UUID parentId = null;
     private UUID itemId = null;
+
+    public CRDTOperation() {
+    }
 
     public CRDTOperation(String userId, OperationType operation, String value, UUID parentId) {
         this.userId = userId;

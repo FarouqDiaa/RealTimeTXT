@@ -26,6 +26,9 @@ import org.springframework.web.socket.sockjs.client.SockJsClient;
 import org.springframework.web.socket.sockjs.client.Transport;
 import org.springframework.web.socket.sockjs.client.WebSocketTransport;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.realtimetxt.shared.CRDTOperation;
 
 /**
@@ -133,7 +136,8 @@ public class ClientSocket {
                 boolean success = (boolean) response.get("success");
                 if (!success) {
                     String errorMessage = response.containsKey("errorMessage")
-                            ? (String) response.get("errorMessage") : "Unknown error";
+                            ? (String) response.get("errorMessage")
+                            : "Unknown error";
                     callback.onError("Failed to create document: " + errorMessage);
                     return;
                 }
@@ -204,7 +208,8 @@ public class ClientSocket {
                 boolean success = (boolean) response.get("success");
                 if (!success) {
                     String errorMessage = response.containsKey("errorMessage")
-                            ? (String) response.get("errorMessage") : "Unknown error";
+                            ? (String) response.get("errorMessage")
+                            : "Unknown error";
                     callback.onError("Failed to join document: " + errorMessage);
                     return;
                 }
@@ -215,11 +220,11 @@ public class ClientSocket {
                 // Handle existing data if available
                 List<CRDTOperation> existingOperations = new ArrayList<>();
                 if (response.containsKey("existingData")) {
-                    // Server might send existing data as a list of operations
-                    Object existingData = response.get("existingData");
-                    if (existingData instanceof List) {
-                        existingOperations = (List<CRDTOperation>) existingData;
-                    }
+                    ObjectMapper mapper = new ObjectMapper();
+                    existingOperations = mapper.convertValue(
+                            response.get("existingData"),
+                            new TypeReference<List<CRDTOperation>>() {
+                            });
                 }
 
                 // Subscribe to document events
@@ -252,6 +257,7 @@ public class ClientSocket {
             @Override
             public void handleFrame(StompHeaders headers, Object payload) {
                 CRDTOperation operation = (CRDTOperation) payload;
+                System.out.println("Received operation: " + operation.getOperation());
                 // Skip own operations as they are applied locally
                 if (!userId.equals(operation.getUserId())) {
                     callback.onRemoteOperation(operation);

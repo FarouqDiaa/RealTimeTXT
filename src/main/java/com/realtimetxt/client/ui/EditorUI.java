@@ -34,7 +34,7 @@ public class EditorUI {
     private String editorCode = "";
     private String currentUser = "";
 
-    private final CRDTController crdtController = new CRDTController();
+    private CRDTController crdtController;
     private ClientSocket clientSocket; // Client socket for network communication
 
     private final Map<String, UserCaret> remoteCursors = new ConcurrentHashMap<>();
@@ -66,9 +66,11 @@ public class EditorUI {
                     Platform.runLater(() -> {
                         showNotification("Joined document: " + documentId);
                         StringBuilder initialContent = new StringBuilder();
-                        for (CRDTOperation operation : operations) {
-                            crdtController.onRemoteOperation(operation);
-                        }
+                        // for (CRDTOperation operation : operations) {
+                        // crdtController.onRemoteOperation(operation);
+                        // }
+                        System.out.println("Operations: " + operations);
+                        crdtController.startNewDocument(operations);
                         initialContent.append(crdtController.renderText());
                         textArea.setText(initialContent.toString());
                     });
@@ -81,6 +83,7 @@ public class EditorUI {
                         setEditorCode(editorCode);
                         setViewerCode(viewerCode);
                         showNotification("New document created with ID: " + documentId);
+                        crdtController.sendOperationsToServer();
                     });
                 }
 
@@ -89,6 +92,9 @@ public class EditorUI {
                     Platform.runLater(() -> {
                         showNotification("Remote operation received");
                         // TODO: Apply the CRDT operation to the local document
+                        System.out.println("Operation: " + operation);
+                        crdtController.onRemoteOperation(operation);
+                        updateText(crdtController.renderText(), true);
                     });
                 }
 
@@ -113,6 +119,7 @@ public class EditorUI {
                     });
                 }
             });
+            this.crdtController = new CRDTController(clientSocket, authenticatedUserId);
         });
 
         initUI();
