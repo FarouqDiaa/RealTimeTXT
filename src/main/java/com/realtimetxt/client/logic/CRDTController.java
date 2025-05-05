@@ -55,7 +55,7 @@ public class CRDTController {
         currentText = renderText();
     }
 
-    public void undo() {
+    synchronized public void undo() {
         if (!undoStack.isEmpty()) {
             isUndoing = true;
             CRDTOperation lastOperation = undoStack.remove(undoStack.size() - 1);
@@ -94,7 +94,7 @@ public class CRDTController {
         }
     }
 
-    public void redo() {
+    synchronized public void redo() {
         System.out.println("Redo: " + redoStack.size());
         if (!redoStack.isEmpty()) {
             isRedoing = true;
@@ -134,7 +134,7 @@ public class CRDTController {
         }
     }
 
-    public void textChanged(String newText, int index) {
+    synchronized public void textChanged(String newText, int index) {
         System.out.println("Text changed: " + newText + " at index: " + index);
         if (isUndoing || isRedoing || isRemoteOperation) {
             isRemoteOperation = false;
@@ -159,7 +159,7 @@ public class CRDTController {
         System.out.println("************************");
     }
 
-    public void onRemoteOperation(CRDTOperation operation) {
+    synchronized public void onRemoteOperation(CRDTOperation operation) {
         isRemoteOperation = true;
 
         crdt.newOperation(operation);
