@@ -16,12 +16,43 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.List;
 
 import com.realtimetxt.client.logic.CRDTController;
 import com.realtimetxt.client.network.ClientSocket;
 import com.realtimetxt.shared.CRDTOperation;
 
 public class EditorUI implements ClientSocket.TextEditorCallback {
+
+    @Override
+    public void onRemoteOperation(CRDTOperation operation) {
+        Platform.runLater(() -> {
+            showNotification("Remote operation received");
+            // TODO: Apply the CRDT operation to the local document
+        });
+    }
+
+    @Override
+    public void onDocumentCreated(String documentId, String editorCode, String viewerCode) {
+        Platform.runLater(() -> {
+            showNotification("Document created with ID: " + documentId);
+            setEditorCode(editorCode);
+            setViewerCode(viewerCode);
+        });
+    }
+
+    @Override
+    public void onDocumentJoined(String documentId, boolean isEditor, List<CRDTOperation> operations) {
+        Platform.runLater(() -> {
+            showNotification("Joined document: " + documentId);
+            StringBuilder initialContent = new StringBuilder();
+            for (CRDTOperation operation : operations) {
+                crdtController.onRemoteOperation(operation);
+            }
+            initialContent.append(crdtController.renderText());
+            textArea.setText(initialContent.toString());
+        });
+    }
 
     @Override
     public void onUserPresenceUpdate(Map<String, Object> presenceUpdate) {
@@ -86,6 +117,19 @@ public class EditorUI implements ClientSocket.TextEditorCallback {
                     Platform.runLater(() -> {
                         showNotification("User presence updated: " + presenceUpdate);
                         // TODO: Handle user presence update logic here
+                    });
+                }
+
+                @Override
+                public void onDocumentJoined(String documentId, boolean isEditor, List<CRDTOperation> operations) {
+                    Platform.runLater(() -> {
+                        showNotification("Joined document: " + documentId);
+                        StringBuilder initialContent = new StringBuilder();
+                        for (CRDTOperation operation : operations) {
+                            crdtController.onRemoteOperation(operation);
+                        }
+                        initialContent.append(crdtController.renderText());
+                        textArea.setText(initialContent.toString());
                     });
                 }
 
