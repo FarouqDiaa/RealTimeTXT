@@ -12,6 +12,7 @@ import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 
 import java.io.*;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -57,25 +58,38 @@ public class EditorUI {
             String authenticatedUserId = UUID.randomUUID().toString(); // Generate a random ID for this user
             this.clientSocket = new ClientSocket(name, authenticatedUserId, new ClientSocket.TextEditorCallback() {
                 @Override
-                public void onUserPresenceUpdate(Set<String>presenceUpdate) {
-                    Platform.runLater(() -> {
-                        showNotification("User presence updated: " + presenceUpdate);
-                        // TODO: Handle user presence update logic here
-
-                        // Clear existing remote cursors and update with new presence data
-                        userListBox.getChildren().clear();
-                        remoteCursors.clear(); // Remove all existing cursors
-                                                
-                        // Add all users from the presence update
-                        for (String username : presenceUpdate) {
-                            // Skip adding the current user to remote cursors
-                            if (!username.equals(currentUser)) {
-                                remoteCursors.put(username, new UserCaret(0));
-                            }
-                        }
-                        updateUserList();
-                    });
+public void onUserPresenceUpdate(Set<String> presenceUpdate) {
+    Platform.runLater(() -> {
+        showNotification("User presence updated: " + presenceUpdate);
+        
+        // Clear existing user list UI
+        userListBox.getChildren().clear();
+        
+        // Get the current set of remote cursors
+        Set<String> existingUsers = new HashSet<>(remoteCursors.keySet());
+        
+        // Process each user from the presence update
+        for (String username : presenceUpdate) {
+            // Skip current user in the remote cursors list
+            if (!username.equals(currentUser)) {
+                // If user isn't already in our map, add them with a default position
+                if (!remoteCursors.containsKey(username)) {
+                    remoteCursors.put(username, new UserCaret(0));
                 }
+                // Remove from existing users (so we know which ones to keep)
+                existingUsers.remove(username);
+            }
+        }
+        
+        // Remove any users no longer in the presence update
+        for (String username : existingUsers) {
+            remoteCursors.remove(username);
+        }
+        
+        // Update the user list UI
+        updateUserList();
+    });
+}
 
                 @Override
                 public void onDocumentCreated(String documentId, String editorCode, String viewerCode) {
