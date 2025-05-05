@@ -13,11 +13,7 @@ public class CRDT {
     }
 
     public CRDT() {
-        this.root = new CRDTItem(null, "", UUID.randomUUID());
-    }
-
-    public CRDT(UUID itemId) {
-        this.root = new CRDTItem(null, "", itemId);
+        this.root = new CRDTItem(null, "", UUID.fromString("00000000-0000-0000-0000-000000000001"));
     }
 
     public CRDTItem getRoot() {

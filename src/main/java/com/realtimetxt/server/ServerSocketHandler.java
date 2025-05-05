@@ -137,6 +137,7 @@ public class ServerSocketHandler {
     @MessageMapping("/document/{documentId}/operation")
     public void handleOperation(@DestinationVariable String documentId, @Payload Map<String, Object> payload) {
         String userId = (String) payload.get("userId");
+        System.out.println("Received operation from user " + userId + " on document " + documentId);
 
         // Validate user and permissions
         if (userId == null) {
@@ -162,7 +163,8 @@ public class ServerSocketHandler {
 
         // Extract operation details from payload
         try {
-            // Assuming the payload contains the operation details or a serialized CRDTOperation
+            // Assuming the payload contains the operation details or a serialized
+            // CRDTOperation
             CRDTOperation operation = extractOperationFromPayload(payload);
 
             if (operation == null) {
@@ -227,7 +229,8 @@ public class ServerSocketHandler {
                 }
             }
 
-            // If itemId is provided, use it, otherwise let the constructor generate a new one
+            // If itemId is provided, use it, otherwise let the constructor generate a new
+            // one
             if (itemIdStr != null) {
                 try {
                     UUID itemId = UUID.fromString(itemIdStr);

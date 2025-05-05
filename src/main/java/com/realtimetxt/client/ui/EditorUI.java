@@ -35,6 +35,10 @@ public class EditorUI {
     private String currentUser = "";
 
     private CRDTController crdtController;
+    private boolean isViewer = false;
+    private Label messageLabel;
+
+    // private final CRDTController crdtController = new CRDTController();
     private ClientSocket clientSocket; // Client socket for network communication
 
     private final Map<String, UserCaret> remoteCursors = new ConcurrentHashMap<>();
@@ -86,6 +90,25 @@ public class EditorUI {
                         crdtController.sendOperationsToServer();
                     });
                 }
+
+                // @Override
+                // public void onDocumentJoined(String documentId, boolean isEditor,
+                // List<CRDTOperation> operations) {
+                // Platform.runLater(() -> {
+                // showNotification("Joined document: " + documentId);
+                // isViewer = !isEditor;
+
+                // StringBuilder initialContent = new StringBuilder();
+                // for (CRDTOperation operation : operations) {
+                // crdtController.onRemoteOperation(operation);
+                // }
+                // initialContent.append(crdtController.renderText());
+                // textArea.setText(initialContent.toString());
+
+                // // Disable editing if the user is a viewer
+                // textArea.setEditable(!isViewer);
+                // });
+                // }
 
                 @Override
                 public void onRemoteOperation(CRDTOperation operation) {
@@ -170,39 +193,52 @@ public class EditorUI {
         exportItem.setOnAction(e -> exportFile());
         fileMenu.getItems().addAll(importItem, exportItem);
 
-        // Edit Menu (Undo/Redo)
+        // Edit Menu
         Menu editMenu = new Menu("Edit");
         MenuItem undoItem = new MenuItem("Undo");
         MenuItem redoItem = new MenuItem("Redo");
+
+        // Add TODO comments for Undo and Redo logic
         undoItem.setOnAction(e -> {
             crdtController.undo();
             updateText(crdtController.renderText(), true);
+            // TODO: Implement Undo functionality
+            showNotification("Undo action triggered (logic not implemented).");
         });
+
         redoItem.setOnAction(e -> {
             crdtController.redo();
             updateText(crdtController.renderText(), true);
+            // TODO: Implement Redo functionality
+            showNotification("Redo action triggered (logic not implemented).");
         });
+
         editMenu.getItems().addAll(undoItem, redoItem);
 
         // Collaboration Menu
         Menu collabMenu = new Menu("Collaboration");
         MenuItem requestCodesItem = new MenuItem("Request Session Codes");
-        MenuItem joinSessionItem = new MenuItem("Join Collaboration");
+        MenuItem joinCollabItem = new MenuItem("Join Collaboration");
 
         requestCodesItem.setOnAction(e -> {
             // Simulate fetching session codes from the server
             String fetchedViewerCode = fetchViewerCodeFromServer();
             String fetchedEditorCode = fetchEditorCodeFromServer();
-
             setViewerCode(fetchedViewerCode);
             setEditorCode(fetchedEditorCode);
 
-            showNotification("Session codes updated!");
+            // Enable editing and remove the message
+            textArea.setEditable(true);
+            messageLabel.setText(""); // Clear the message
+            showNotification("Session codes updated! Editing is now enabled.");
         });
-        joinSessionItem.setOnAction(e -> showJoinSessionDialog());
-        collabMenu.getItems().addAll(requestCodesItem, joinSessionItem);
+
+        joinCollabItem.setOnAction(e -> showJoinSessionDialog());
+
+        collabMenu.getItems().addAll(requestCodesItem, joinCollabItem);
 
         menuBar.getMenus().addAll(fileMenu, editMenu, collabMenu);
+
         return menuBar;
     }
 
@@ -218,9 +254,15 @@ public class EditorUI {
                 if (!clientSocket.isConnected()) {
                     clientSocket.connect();
                 }
-                // Actually join the document with the entered code
+                // Attempt to join the document with the entered code
                 clientSocket.joinDocument(code);
-                showNotification("Attempting to join session with code: " + code);
+
+                // If join is successful, remove the message label
+                Platform.runLater(() -> {
+                    messageLabel.setText(""); // Clear the message
+                    textArea.setEditable(true); // Enable editing
+                    showNotification("Successfully joined session with code: " + code);
+                });
             } else {
                 showAlert("Client socket not initialized");
             }
@@ -232,6 +274,15 @@ public class EditorUI {
         StackPane editorPane = new StackPane();
         textArea = new TextArea();
         textArea.setStyle("-fx-font-family: monospace; -fx-font-size: 14px;");
+        textArea.setEditable(false); // Initially set to non-editable
+
+        // Add a message label
+        messageLabel = new Label("Editing is disabled. Please request a session code to start editing.");
+        messageLabel.setStyle("-fx-text-fill: red; -fx-font-size: 14px;");
+
+        VBox editorContainer = new VBox(10, messageLabel, textArea);
+        editorContainer.setPadding(new Insets(10));
+        editorPane.getChildren().add(editorContainer);
 
         textArea.textProperty().addListener((obs, oldText, newText) -> {
             updateRemoteCursors();
@@ -239,9 +290,11 @@ public class EditorUI {
         });
         textArea.caretPositionProperty().addListener((obs, oldPos, newPos) -> {
             // TODO: Send caret position to backend server
+            // clientSocket.sendCaretPosition(newPos.intValue());
         });
 
         editorPane.getChildren().add(textArea);
+
         return editorPane;
     }
 
@@ -374,9 +427,9 @@ public class EditorUI {
 
     // ──────────────────────────────── Remote Cursor & User List
     // ────────────────────────────────
-    public void addRemoteCursor(String userId, int position, Color color) {
+    public void addRemoteCursor(String userId, int position) {
         Platform.runLater(() -> {
-            remoteCursors.put(userId, new UserCaret(position, color));
+            remoteCursors.put(userId, new UserCaret(position));
             updateRemoteCursors();
             updateUserList();
         });
@@ -402,7 +455,6 @@ public class EditorUI {
         remoteCursors.forEach((userId, caret) -> {
             int line = getLineNumber(caret.getPosition());
             Label label = new Label(userId + " - line " + line);
-            label.setTextFill(caret.getColor());
             userListBox.getChildren().add(new HBox(5, label));
         });
     }
@@ -444,11 +496,9 @@ public class EditorUI {
     public static class UserCaret {
 
         private int position;
-        private final Color color;
 
-        public UserCaret(int position, Color color) {
+        public UserCaret(int position) {
             this.position = position;
-            this.color = color;
         }
 
         public int getPosition() {
@@ -457,10 +507,6 @@ public class EditorUI {
 
         public void setPosition(int position) {
             this.position = position;
-        }
-
-        public Color getColor() {
-            return color;
         }
     }
 }

@@ -28,14 +28,14 @@ public class CRDTController {
         this.items.add(crdt.getRoot());
         this.userId = userId;
 
-        _prepareFirstOperation();
+        // _prepareFirstOperation();
     }
 
     public CRDTController() {
         this.crdt = new CRDT();
         this.items.add(crdt.getRoot());
 
-        _prepareFirstOperation();
+        // _prepareFirstOperation();
     }
 
     public void sendOperationsToServer() {
@@ -49,22 +49,12 @@ public class CRDTController {
         this.undoStack.clear();
         this.redoStack.clear();
         this.items.clear();
-        this.crdt = new CRDT(operations.remove(0).getItemId()); // Assuming CRDT has a constructor that accepts a
+        this.crdt = new CRDT();
         for (CRDTOperation operation : operations) {
             crdt.newOperation(operation);
         }
         _updateItemsList();
         currentText = renderText();
-    }
-
-    private void _prepareFirstOperation() {
-        CRDTOperation firstOperation = new CRDTOperation(
-                userId,
-                OperationType.INSERT,
-                "",
-                null,
-                crdt.getRoot().getId());
-        operations.add(firstOperation);
     }
 
     public void undo() {
