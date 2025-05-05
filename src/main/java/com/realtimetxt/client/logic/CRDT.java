@@ -28,6 +28,11 @@ public class CRDT {
     }
 
     public void newOperation(CRDTOperation operation) {
+        System.out.println("Current root: " + root.getId());
+        System.out.println("New operation: " + operation.getOperation() +
+                " Operation value: " + operation.getValue() +
+                " Item ID: " + operation.getItemId() +
+                " Parent ID: " + operation.getParentId());
         if (operation.getOperation() == OperationType.INSERT) {
             CRDTItem parent = findCrItem(operation.getParentId());
             CRDTItem newItem = new CRDTItem(parent, operation.getValue(), operation.getItemId());
@@ -39,7 +44,9 @@ public class CRDT {
     }
 
     private CRDTItem _findCrItem(CRDTItem root, UUID itemId) {
-        if (root.getId() == itemId) {
+        System.out.println("Searching for item ID: " + itemId + " in root ID: " + root.getId());
+        if (root.getId().equals(itemId)) {
+            System.out.println("Found item ID: " + itemId + " in root ID: " + root.getId());
             return root;
         }
 
