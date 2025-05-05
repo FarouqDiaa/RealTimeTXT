@@ -188,10 +188,12 @@ public class EditorUI implements ClientSocket.TextEditorCallback {
         MenuItem undoItem = new MenuItem("Undo");
         MenuItem redoItem = new MenuItem("Redo");
         undoItem.setOnAction(e -> {
-            // TODO: Implement undo action
+            crdtController.undo();
+            updateText(crdtController.renderText(), true);
         });
         redoItem.setOnAction(e -> {
-            // TODO: Implement redo action
+            crdtController.redo();
+            updateText(crdtController.renderText(), true);
         });
         editMenu.getItems().addAll(undoItem, redoItem);
 

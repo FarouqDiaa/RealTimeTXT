@@ -14,6 +14,8 @@ public class CRDTController {
     private ArrayList<CRDTItem> items = new ArrayList<>();
     private ArrayList<CRDTOperation> undoStack = new ArrayList<>();
     private ArrayList<CRDTOperation> redoStack = new ArrayList<>();
+    private boolean isUndoing = false;
+    private boolean isRedoing = false;
 
     public CRDTController() {
         this.crdt = new CRDT();
@@ -22,18 +24,22 @@ public class CRDTController {
 
     public void undo() {
         if (!undoStack.isEmpty()) {
+            isUndoing = true;
             CRDTOperation lastOperation = undoStack.remove(undoStack.size() - 1);
             if (lastOperation.getOperation() == OperationType.INSERT) {
                 CRDTOperation newOperation = new CRDTOperation(
                         "0",
                         OperationType.DELETE,
-                        null,
-                        null,
+                        lastOperation.getValue(),
+                        lastOperation.getParentId(),
                         lastOperation.getItemId());
 
                 crdt.newOperation(newOperation);
-                int index = items.indexOf(crdt.findCrItem(lastOperation.getItemId()));
-                items.remove(index);
+
+                _updateItemsList();
+                currentText = renderText();
+                redoStack.add(newOperation);
+
             } else if (lastOperation.getOperation() == OperationType.DELETE) {
                 CRDTOperation newOperation = new CRDTOperation(
                         "0",
@@ -43,27 +49,33 @@ public class CRDTController {
                         UUID.randomUUID());
 
                 crdt.newOperation(newOperation);
-                int index = items.indexOf(crdt.findCrItem(lastOperation.getParentId()));
-                items.add(index + 1, crdt.findCrItem(newOperation.getItemId()));
+
+                _updateItemsList();
+                currentText = renderText();
+                redoStack.add(newOperation);
             }
-            redoStack.add(lastOperation);
         }
     }
 
     public void redo() {
+        System.out.println("Redo: " + redoStack.size());
         if (!redoStack.isEmpty()) {
+            isRedoing = true;
             CRDTOperation lastOperation = redoStack.remove(redoStack.size() - 1);
-            if (lastOperation.getOperation() == OperationType.DELETE) {
+            if (lastOperation.getOperation() == OperationType.INSERT) {
                 CRDTOperation newOperation = new CRDTOperation(
                         "0",
                         OperationType.DELETE,
-                        null,
-                        null,
+                        lastOperation.getValue(),
+                        lastOperation.getParentId(),
                         lastOperation.getItemId());
 
                 crdt.newOperation(newOperation);
-                int index = items.indexOf(crdt.findCrItem(lastOperation.getItemId()));
-                items.remove(index);
+
+                _updateItemsList();
+                currentText = renderText();
+                undoStack.add(newOperation);
+
             } else if (lastOperation.getOperation() == OperationType.DELETE) {
                 CRDTOperation newOperation = new CRDTOperation(
                         "0",
@@ -73,15 +85,21 @@ public class CRDTController {
                         UUID.randomUUID());
 
                 crdt.newOperation(newOperation);
-                int index = items.indexOf(crdt.findCrItem(lastOperation.getParentId()));
-                items.add(index + 1, crdt.findCrItem(newOperation.getItemId()));
+
+                _updateItemsList();
+                currentText = renderText();
+                undoStack.add(newOperation);
             }
-            undoStack.add(lastOperation);
         }
     }
 
     public void textChanged(String newText, int index) {
         System.out.println("Text changed: " + newText + " at index: " + index);
+        if (isUndoing || isRedoing) {
+            isUndoing = false;
+            isRedoing = false;
+            return;
+        }
 
         if (newText.length() > currentText.length()) {
             for (int i = 0; i < (newText.length() - currentText.length()); i++) {
@@ -93,7 +111,10 @@ public class CRDTController {
             }
         }
         currentText = newText;
-        System.out.println("Current text: " + renderText());
+        redoStack.clear();
+
+        System.out.println("Rendered text: " + renderText());
+        System.out.println("************************");
     }
 
     public void onRemoteOperation(CRDTOperation operation) {
@@ -153,5 +174,20 @@ public class CRDTController {
         crdt.newOperation(operation);
         items.remove(index);
         undoStack.add(operation);
+    }
+
+    private void _updateItemsList() {
+        Stack<CRDTItem> stack = new Stack<>();
+        stack.push(crdt.getRoot());
+        items.clear();
+        while (!stack.isEmpty()) {
+            CRDTItem item = stack.pop();
+            if (!item.isDeleted()) {
+                items.add(item);
+            }
+            for (CRDTItem child : item.getChildren()) {
+                stack.push(child);
+            }
+        }
     }
 }
