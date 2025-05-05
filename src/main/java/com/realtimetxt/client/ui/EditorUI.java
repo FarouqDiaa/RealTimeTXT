@@ -93,6 +93,8 @@ public class EditorUI implements ClientSocket.TextEditorCallback {
     private String editorCode = "";
     private String currentUser = "";
 
+    private boolean isViewer = false;
+
     private final CRDTController crdtController = new CRDTController();
     private ClientSocket clientSocket; // Client socket for network communication
 
@@ -121,19 +123,6 @@ public class EditorUI implements ClientSocket.TextEditorCallback {
                 }
 
                 @Override
-                public void onDocumentJoined(String documentId, boolean isEditor, List<CRDTOperation> operations) {
-                    Platform.runLater(() -> {
-                        showNotification("Joined document: " + documentId);
-                        StringBuilder initialContent = new StringBuilder();
-                        for (CRDTOperation operation : operations) {
-                            crdtController.onRemoteOperation(operation);
-                        }
-                        initialContent.append(crdtController.renderText());
-                        textArea.setText(initialContent.toString());
-                    });
-                }
-
-                @Override
                 public void onDocumentCreated(String documentId, String editorCode, String viewerCode) {
                     Platform.runLater(() -> {
                         showNotification("Document created with ID: " + documentId);
@@ -144,12 +133,20 @@ public class EditorUI implements ClientSocket.TextEditorCallback {
                 }
 
                 @Override
-                public void onDocumentJoined(String documentId, boolean isEditor, List<CRDTOperation> initialOperations) {
+                public void onDocumentJoined(String documentId, boolean isEditor, List<CRDTOperation> operations) {
                     Platform.runLater(() -> {
                         showNotification("Joined document: " + documentId);
-                        //String initialContent = crdtController.applyOperations(initialOperations);
-                        String initialContent = ""; // TODO: Implement the logic to apply operations and get the initial content
-                        textArea.setText(initialContent);
+                        isViewer = !isEditor; // Set the viewer flag based on the isEditor parameter
+
+                        StringBuilder initialContent = new StringBuilder();
+                        for (CRDTOperation operation : operations) {
+                            crdtController.onRemoteOperation(operation);
+                        }
+                        initialContent.append(crdtController.renderText());
+                        textArea.setText(initialContent.toString());
+
+                        // Disable editing if the user is a viewer
+                        textArea.setEditable(!isViewer);
                     });
                 }
 
@@ -503,30 +500,6 @@ public class EditorUI implements ClientSocket.TextEditorCallback {
 
     // ──────────────────────────────── Client Socket Callbacks
     // ────────────────────────────────
-    @Override
-    public void onDocumentCreated(String documentId, String viewerCode, String editorCode) {
-        setViewerCode(viewerCode);
-        setEditorCode(editorCode);
-        showNotification("Document created with ID: " + documentId);
-    }
-
-    @Override
-    public void onDocumentJoined(String documentId, boolean isEditor, List<CRDTOperation> initialOperations) {
-        setViewerCode(viewerCode);
-        if (isEditor) {
-            setEditorCode(editorCode);
-        }
-        showNotification("Joined document with ID: " + documentId);
-    }
-
-    @Override
-    public void onRemoteOperation(CRDTOperation operation) {
-        crdtController.onRemoteOperation(operation);
-        Platform.runLater(() -> {
-            String newText = crdtController.renderText();
-            updateText(newText, true);
-        });
-    }
 
     public static class UserCaret {
 
