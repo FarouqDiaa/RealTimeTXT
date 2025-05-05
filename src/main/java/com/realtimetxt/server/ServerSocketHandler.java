@@ -60,7 +60,13 @@ public class ServerSocketHandler {
         response.put("viewerCode", viewerCode);
         response.put("success", true);
 
-        notifyUserPresence(documentId, userId, username, true);
+        manager.addUserToDocument(documentId, userId, username, true);
+    
+        // Send all currently active users to the joining user
+        Map<String, Object> userListMessage = new HashMap<>();
+        userListMessage.put("users", manager.getDocumentUsers(documentId));
+        messagingTemplate.convertAndSend("/topic/document/" + documentId + "/users", userListMessage);
+        
 
         messagingTemplate.convertAndSend("/topic/createResponse/" + userId, response);
 
@@ -91,6 +97,7 @@ public class ServerSocketHandler {
             messagingTemplate.convertAndSend("/topic/joinResponse/" + userId, response);
             return;
         }
+        
 
         String documentId = manager.getDocumentFromCode(sharingCode);
         if (documentId == null) {
@@ -113,6 +120,13 @@ public class ServerSocketHandler {
 
         // Join the user to the document
         manager.joinSession(userId, sharingCode);
+
+        manager.addUserToDocument(documentId, userId, username, isEditor);
+    
+        // Send all currently active users to the joining user
+        Map<String, Object> userListMessage = new HashMap<>();
+        userListMessage.put("users", manager.getDocumentUsers(documentId));
+        messagingTemplate.convertAndSend("/topic/document/" + documentId + "/users", userListMessage);
 
         // Ensure document data is initialized or apply existing data
         documentData.putIfAbsent(documentId, new CopyOnWriteArrayList<>());
@@ -274,7 +288,13 @@ public class ServerSocketHandler {
         }
 
         // Notify other users
-        notifyUserPresence(documentId, userId, username, false);
+        manager.removeUserFromDocument(documentId, userId);
+    
+        // Send all currently active users to the joining user
+        Map<String, Object> userListMessage = new HashMap<>();
+        userListMessage.put("users", manager.getDocumentUsers(documentId));
+        messagingTemplate.convertAndSend("/topic/document/" + documentId + "/users", userListMessage);
+        
 
         System.out.println("User " + userId + " left document " + documentId);
     }
