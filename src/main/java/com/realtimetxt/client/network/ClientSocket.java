@@ -273,15 +273,21 @@ public class ClientSocket {
             public Type getPayloadType(StompHeaders headers) {
                 return Map.class;
             }
-
+        
             @Override
             public void handleFrame(StompHeaders headers, Object payload) {
                 System.out.println("Received user presence update: " + payload);
-                Map<String, Map<String, SessionManager.UserPresence>> presenceUpdate = (Map<String, Map<String, SessionManager.UserPresence>>) payload;
-                System.out.println("Parsed user presence update: " + presenceUpdate.get("users"));
-                // Notify UI about user presence updates
-                callback.onUserPresenceUpdate(presenceUpdate.get("users"));
-            }
+                Map<String, Object> presenceUpdate = (Map<String, Object>) payload;
+                System.out.println("Presence update: " + presenceUpdate.get("users"));
+                
+                // Check if this is a user list message or a single user presence update
+                if (presenceUpdate.containsKey("users")) {
+                    // This is the full user list format
+                    Map<String, SessionManager.UserPresence> users = 
+                        (Map<String, SessionManager.UserPresence>) presenceUpdate.get("users");
+                    callback.onUserPresenceUpdate(users);
+                }
+               
         });
     }
 
