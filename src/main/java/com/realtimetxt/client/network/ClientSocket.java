@@ -4,6 +4,7 @@ import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -272,20 +273,56 @@ public class ClientSocket {
         stompSession.subscribe("/topic/document/" + documentId + "/users", new StompSessionHandlerAdapter() {
             @Override
             public Type getPayloadType(StompHeaders headers) {
-                return Map.class;
+                return HashMap.class;
             }
 
             @Override
             public void handleFrame(StompHeaders headers, Object payload) {
                 System.out.println("Received user presence update: " + payload);
-                Map<String, Set<String>> presenceUpdate = (Map<String, Set<String>>) payload;
 
-                System.out.println("Presence update: " + presenceUpdate.get("users"));
+                try {
+                    if (payload == null) {
+                        System.err.println("Payload is null!");
+                        return;
+                    }
 
-                Set<String> usernames = presenceUpdate.get("users");
-                    
-                    callback.onUserPresenceUpdate(usernames);
-                
+                    // Debug the payload type
+                    System.out.println("Payload class: " + payload.getClass().getName());
+
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> presenceMap = (Map<String, Object>) payload;
+
+                    // Debug the map keys
+                    System.out.println("Map keys: " + presenceMap.keySet());
+
+                    if (!presenceMap.containsKey("users")) {
+                        System.err.println("Payload does not contain 'users' key!");
+                        return;
+                    }
+
+                    // Get users list and handle different possible formats
+                    Object usersObj = presenceMap.get("users");
+                    System.out.println("Users object class: " + usersObj.getClass().getName());
+
+                    // Convert to Set<String> depending on what we actually receive
+                    Set<String> usernames;
+                    if (usersObj instanceof Set) {
+                        usernames = (Set<String>) usersObj;
+                    } else if (usersObj instanceof List) {
+                        usernames = new HashSet<>((List<String>) usersObj);
+                    } else {
+                        System.err.println("Users object is not a List or Set: " + usersObj);
+                        return;
+                    }
+
+                    // Call the callback
+                    if (callback != null) {
+                        callback.onUserPresenceUpdate(usernames);
+                    }
+                } catch (Exception e) {
+                    System.err.println("Error handling user presence update: " + e.getMessage());
+                    e.printStackTrace();
+                }
             }
         });
     }

@@ -58,38 +58,42 @@ public class EditorUI {
             String authenticatedUserId = UUID.randomUUID().toString(); // Generate a random ID for this user
             this.clientSocket = new ClientSocket(name, authenticatedUserId, new ClientSocket.TextEditorCallback() {
                 @Override
-public void onUserPresenceUpdate(Set<String> presenceUpdate) {
-    Platform.runLater(() -> {
-        showNotification("User presence updated: " + presenceUpdate);
-        
-        // Clear existing user list UI
-        userListBox.getChildren().clear();
-        
-        // Get the current set of remote cursors
-        Set<String> existingUsers = new HashSet<>(remoteCursors.keySet());
-        
-        // Process each user from the presence update
-        for (String username : presenceUpdate) {
-            // Skip current user in the remote cursors list
-            if (!username.equals(currentUser)) {
-                // If user isn't already in our map, add them with a default position
-                if (!remoteCursors.containsKey(username)) {
-                    remoteCursors.put(username, new UserCaret(0));
+                public void onUserPresenceUpdate(Set<String> presenceUpdate) {
+                    // This crucial method handles user presence updates
+                    Platform.runLater(() -> {
+                        showNotification("User presence updated: " + presenceUpdate);
+
+                        // Clear existing user list UI
+                        userListBox.getChildren().clear();
+
+                        // Get the current set of remote cursors
+                        Set<String> existingUsers = new HashSet<>(remoteCursors.keySet());
+
+                        // Process each user from the presence update
+                        for (String username : presenceUpdate) {
+                            // Skip current user in the remote cursors list
+                            System.out.println(
+                                    "Current user: " + currentUser + ", Username: " + username + "+++++++++++++++++++");
+
+                            if (!username.equals(currentUser)) {
+                                // If user isn't already in our map, add them with a default position
+                                if (!remoteCursors.containsKey(username)) {
+                                    remoteCursors.put(username, new UserCaret(0));
+                                }
+                                // Remove from existing users (so we know which ones to keep)
+                                existingUsers.remove(username);
+                            }
+                        }
+
+                        // Remove any users no longer in the presence update
+                        for (String username : existingUsers) {
+                            remoteCursors.remove(username);
+                        }
+
+                        // Update the user list UI
+                        updateUserList();
+                    });
                 }
-                // Remove from existing users (so we know which ones to keep)
-                existingUsers.remove(username);
-            }
-        }
-        
-        // Remove any users no longer in the presence update
-        for (String username : existingUsers) {
-            remoteCursors.remove(username);
-        }
-        
-        // Update the user list UI
-        updateUserList();
-    });
-}
 
                 @Override
                 public void onDocumentCreated(String documentId, String editorCode, String viewerCode) {
@@ -115,8 +119,8 @@ public void onUserPresenceUpdate(Set<String> presenceUpdate) {
                         messageLabel.setText(isViewer ? "You are a viewer. Editing is disabled." : "");
 
                         // add new user to the user list
-                        remoteCursors.put(currentUser, new UserCaret(0));
-                        updateUserList();
+                        // remoteCursors.put(currentUser, new UserCaret(0));
+                        // updateUserList();
                     });
                 }
 
