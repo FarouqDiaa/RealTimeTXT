@@ -94,6 +94,7 @@ public class EditorUI implements ClientSocket.TextEditorCallback {
     private String currentUser = "";
 
     private boolean isViewer = false;
+    private Label messageLabel;
 
     private final CRDTController crdtController = new CRDTController();
     private ClientSocket clientSocket; // Client socket for network communication
@@ -136,7 +137,7 @@ public class EditorUI implements ClientSocket.TextEditorCallback {
                 public void onDocumentJoined(String documentId, boolean isEditor, List<CRDTOperation> operations) {
                     Platform.runLater(() -> {
                         showNotification("Joined document: " + documentId);
-                        isViewer = !isEditor; // Set the viewer flag based on the isEditor parameter
+                        isViewer = !isEditor;
 
                         StringBuilder initialContent = new StringBuilder();
                         for (CRDTOperation operation : operations) {
@@ -229,37 +230,28 @@ public class EditorUI implements ClientSocket.TextEditorCallback {
         exportItem.setOnAction(e -> exportFile());
         fileMenu.getItems().addAll(importItem, exportItem);
 
-        // Edit Menu (Undo/Redo)
-        Menu editMenu = new Menu("Edit");
-        MenuItem undoItem = new MenuItem("Undo");
-        MenuItem redoItem = new MenuItem("Redo");
-        undoItem.setOnAction(e -> {
-            // TODO: Implement undo action
-        });
-        redoItem.setOnAction(e -> {
-            // TODO: Implement redo action
-        });
-        editMenu.getItems().addAll(undoItem, redoItem);
-
         // Collaboration Menu
         Menu collabMenu = new Menu("Collaboration");
         MenuItem requestCodesItem = new MenuItem("Request Session Codes");
-        MenuItem joinSessionItem = new MenuItem("Join Collaboration");
+        MenuItem joinCollabItem = new MenuItem("Join Collaboration");
 
         requestCodesItem.setOnAction(e -> {
             // Simulate fetching session codes from the server
             String fetchedViewerCode = fetchViewerCodeFromServer();
             String fetchedEditorCode = fetchEditorCodeFromServer();
-
             setViewerCode(fetchedViewerCode);
             setEditorCode(fetchedEditorCode);
 
-            showNotification("Session codes updated!");
+            // Enable editing and remove the message
+            textArea.setEditable(true);
+            messageLabel.setText(""); // Clear the message
+            showNotification("Session codes updated! Editing is now enabled.");
         });
-        joinSessionItem.setOnAction(e -> showJoinSessionDialog());
-        collabMenu.getItems().addAll(requestCodesItem, joinSessionItem);
+        joinCollabItem.setOnAction(e -> showJoinSessionDialog());
 
-        menuBar.getMenus().addAll(fileMenu, editMenu, collabMenu);
+        collabMenu.getItems().addAll(requestCodesItem, joinCollabItem);
+        menuBar.getMenus().addAll(fileMenu, collabMenu);
+
         return menuBar;
     }
 
@@ -289,16 +281,16 @@ public class EditorUI implements ClientSocket.TextEditorCallback {
         StackPane editorPane = new StackPane();
         textArea = new TextArea();
         textArea.setStyle("-fx-font-family: monospace; -fx-font-size: 14px;");
+        textArea.setEditable(false); // Initially set to non-editable
 
-        textArea.textProperty().addListener((obs, oldText, newText) -> {
-            updateRemoteCursors();
-            crdtController.textChanged(newText, textArea.getCaretPosition());
-        });
-        textArea.caretPositionProperty().addListener((obs, oldPos, newPos) -> {
-            // TODO: Send caret position to backend server
-        });
+        // Add a message label
+        messageLabel = new Label("Editing is disabled. Please request a session code to start editing.");
+        messageLabel.setStyle("-fx-text-fill: red; -fx-font-size: 14px;");
 
-        editorPane.getChildren().add(textArea);
+        VBox editorContainer = new VBox(10, messageLabel, textArea);
+        editorContainer.setPadding(new Insets(10));
+        editorPane.getChildren().add(editorContainer);
+
         return editorPane;
     }
 
