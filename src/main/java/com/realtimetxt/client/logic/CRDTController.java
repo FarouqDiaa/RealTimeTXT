@@ -18,6 +18,7 @@ public class CRDTController {
     private ArrayList<CRDTOperation> redoStack = new ArrayList<>();
     private boolean isUndoing = false;
     private boolean isRedoing = false;
+    private boolean isRemoteOperation = false;
     private ClientSocket clientSocket;
     private String userId;
     private ArrayList<CRDTOperation> operations = new ArrayList<>();
@@ -138,7 +139,8 @@ public class CRDTController {
 
     public void textChanged(String newText, int index) {
         System.out.println("Text changed: " + newText + " at index: " + index);
-        if (isUndoing || isRedoing) {
+        if (isUndoing || isRedoing || isRemoteOperation) {
+            isRemoteOperation = false;
             isUndoing = false;
             isRedoing = false;
             return;
@@ -161,14 +163,9 @@ public class CRDTController {
     }
 
     public void onRemoteOperation(CRDTOperation operation) {
-        System.out.println("Remote operation: " + operation);
-        System.out.println(
-                "Inserted: " + operation.getValue() +
-                        " with itemId: " + operation.getItemId() +
-                        " and parentId: " + operation.getParentId());
+        isRemoteOperation = true;
         crdt.newOperation(operation);
         _updateItemsList();
-        System.out.println("Rendered text: " + renderText());
     }
 
     public String renderText() {

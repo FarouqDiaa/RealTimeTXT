@@ -23,7 +23,6 @@ import com.realtimetxt.client.network.ClientSocket;
 import com.realtimetxt.shared.CRDTOperation;
 
 public class EditorUI {
-
     private Stage primaryStage;
     private TextArea textArea;
     private VBox userListBox;
@@ -34,11 +33,10 @@ public class EditorUI {
     private String editorCode = "";
     private String currentUser = "";
 
-    private CRDTController crdtController;
     private boolean isViewer = false;
     private Label messageLabel;
 
-    // private final CRDTController crdtController = new CRDTController();
+    private CRDTController crdtController;
     private ClientSocket clientSocket; // Client socket for network communication
 
     private final Map<String, UserCaret> remoteCursors = new ConcurrentHashMap<>();
@@ -66,58 +64,40 @@ public class EditorUI {
                 }
 
                 @Override
-                public void onDocumentJoined(String documentId, boolean isEditor, List<CRDTOperation> operations) {
-                    Platform.runLater(() -> {
-                        showNotification("Joined document: " + documentId);
-                        StringBuilder initialContent = new StringBuilder();
-                        // for (CRDTOperation operation : operations) {
-                        // crdtController.onRemoteOperation(operation);
-                        // }
-                        System.out.println("Operations: " + operations);
-                        crdtController.startNewDocument(operations);
-                        initialContent.append(crdtController.renderText());
-                        textArea.setText(initialContent.toString());
-                    });
-                }
-
-                @Override
                 public void onDocumentCreated(String documentId, String editorCode, String viewerCode) {
                     Platform.runLater(() -> {
                         showNotification("Document created with ID: " + documentId);
                         setEditorCode(editorCode);
                         setViewerCode(viewerCode);
                         showNotification("New document created with ID: " + documentId);
-                        crdtController.sendOperationsToServer();
                     });
                 }
 
-                // @Override
-                // public void onDocumentJoined(String documentId, boolean isEditor,
-                // List<CRDTOperation> operations) {
-                // Platform.runLater(() -> {
-                // showNotification("Joined document: " + documentId);
-                // isViewer = !isEditor;
+                @Override
+                public void onDocumentJoined(String documentId, boolean isEditor, List<CRDTOperation> operations) {
+                    Platform.runLater(() -> {
+                        showNotification("Joined document: " + documentId);
+                        isViewer = !isEditor;
 
-                // StringBuilder initialContent = new StringBuilder();
-                // for (CRDTOperation operation : operations) {
-                // crdtController.onRemoteOperation(operation);
-                // }
-                // initialContent.append(crdtController.renderText());
-                // textArea.setText(initialContent.toString());
+                        StringBuilder initialContent = new StringBuilder();
+                        for (CRDTOperation operation : operations) {
+                            crdtController.onRemoteOperation(operation);
+                        }
+                        initialContent.append(crdtController.renderText());
+                        textArea.setText(initialContent.toString());
 
-                // // Disable editing if the user is a viewer
-                // textArea.setEditable(!isViewer);
-                // });
-                // }
+                        // Disable editing if the user is a viewer
+                        textArea.setEditable(!isViewer);
+                    });
+                }
 
                 @Override
                 public void onRemoteOperation(CRDTOperation operation) {
                     Platform.runLater(() -> {
                         showNotification("Remote operation received");
                         // TODO: Apply the CRDT operation to the local document
-                        System.out.println("Operation: " + operation);
                         crdtController.onRemoteOperation(operation);
-                        updateText(crdtController.renderText(), true);
+                        updateText(crdtController.renderText(), false);
                     });
                 }
 
@@ -144,7 +124,6 @@ public class EditorUI {
             });
             this.crdtController = new CRDTController(clientSocket, authenticatedUserId);
         });
-
         initUI();
     }
 
@@ -202,15 +181,13 @@ public class EditorUI {
         undoItem.setOnAction(e -> {
             crdtController.undo();
             updateText(crdtController.renderText(), true);
-            // TODO: Implement Undo functionality
-            showNotification("Undo action triggered (logic not implemented).");
+            showNotification("Undo action triggered.");
         });
 
         redoItem.setOnAction(e -> {
             crdtController.redo();
             updateText(crdtController.renderText(), true);
-            // TODO: Implement Redo functionality
-            showNotification("Redo action triggered (logic not implemented).");
+            showNotification("Redo action triggered.");
         });
 
         editMenu.getItems().addAll(undoItem, redoItem);
@@ -284,16 +261,15 @@ public class EditorUI {
         editorContainer.setPadding(new Insets(10));
         editorPane.getChildren().add(editorContainer);
 
-        textArea.textProperty().addListener((obs, oldText, newText) -> {
-            updateRemoteCursors();
-            crdtController.textChanged(newText, textArea.getCaretPosition());
-        });
-        textArea.caretPositionProperty().addListener((obs, oldPos, newPos) -> {
-            // TODO: Send caret position to backend server
-            // clientSocket.sendCaretPosition(newPos.intValue());
+        textArea.textProperty().addListener((observable, oldValue, newValue) -> {
+            // Update the CRDT with the new text
+            crdtController.textChanged(newValue, textArea.getCaretPosition());
         });
 
-        editorPane.getChildren().add(textArea);
+        textArea.caretPositionProperty().addListener((observable, oldValue, newValue) -> {
+            // Update the remote cursor position
+
+        });
 
         return editorPane;
     }
@@ -492,6 +468,9 @@ public class EditorUI {
         this.editorCode = code;
         Platform.runLater(() -> editorCodeLabel.setText(code));
     }
+
+    // ──────────────────────────────── Client Socket Callbacks
+    // ────────────────────────────────
 
     public static class UserCaret {
 
