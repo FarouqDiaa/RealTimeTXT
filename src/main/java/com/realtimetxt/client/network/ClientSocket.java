@@ -6,6 +6,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -277,15 +278,13 @@ public class ClientSocket {
             @Override
             public void handleFrame(StompHeaders headers, Object payload) {
                 System.out.println("Received user presence update: " + payload);
-                Map<String, SessionManager.UserPresence> presenceUpdate = (Map<String, SessionManager.UserPresence>) payload;
+                Map<String, Set<String>> presenceUpdate = (Map<String, Set<String>>) payload;
+
                 System.out.println("Presence update: " + presenceUpdate.get("users"));
 
-                // Check if this is a user list message or a single user presence update
-  
-                    // This is the full user list format
-                    Map<String, SessionManager.UserPresence> users = (Map<String, SessionManager.UserPresence>) presenceUpdate
-                            .get("users");
-                    callback.onUserPresenceUpdate(users);
+                Set<String> usernames = presenceUpdate.get("users");
+                    
+                    callback.onUserPresenceUpdate(usernames);
                 
             }
         });
@@ -454,7 +453,7 @@ public class ClientSocket {
 
         void onRemoteOperation(CRDTOperation operation);
 
-        void onUserPresenceUpdate(Map<String, SessionManager.UserPresence> presenceUpdate);
+        void onUserPresenceUpdate(Set<String> presenceUpdate);
 
         void onReconnected();
 

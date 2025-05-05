@@ -3,6 +3,7 @@ package com.realtimetxt.server;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -15,6 +16,7 @@ import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
+import com.realtimetxt.server.SessionManager.UserPresence;
 import com.realtimetxt.shared.CRDTOperation;
 import com.realtimetxt.shared.enums.OperationType;
 
@@ -120,12 +122,19 @@ public class ServerSocketHandler {
         manager.joinSession(userId, sharingCode);
 
         manager.addUserToDocument(documentId, userId, username, isEditor);
+        // Get current users in the document
+        Set<UserPresence> users = manager.getDocumentUsers(documentId);
+        // Create a map to send to clients with user information
+        Set<String> usernames = users.stream()
+            .map(UserPresence::getUsername)
+            .collect(java.util.stream.Collectors.toSet());
+        Map<String, Set<String>> userListMessage = new HashMap<>();
+        userListMessage.put("users", usernames);
 
-        // Send all currently active users to the joining user
-        Map<String, Object> userListMessage = new HashMap<>();
-        userListMessage.put("users", manager.getDocumentUsers(documentId));
-        System.out.println("kuf you from server" + userListMessage.get("users"));
-        messagingTemplate.convertAndSend("/topic/document/" + documentId + "/users", userListMessage.get("users"));
+
+
+        
+        messagingTemplate.convertAndSend("/topic/document/" + documentId + "/users", userListMessage);
 
         // Ensure document data is initialized or apply existing data
         documentData.putIfAbsent(documentId, new CopyOnWriteArrayList<>());

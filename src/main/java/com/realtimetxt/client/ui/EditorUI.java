@@ -14,6 +14,7 @@ import javafx.stage.Stage;
 import java.io.*;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -56,14 +57,22 @@ public class EditorUI {
             String authenticatedUserId = UUID.randomUUID().toString(); // Generate a random ID for this user
             this.clientSocket = new ClientSocket(name, authenticatedUserId, new ClientSocket.TextEditorCallback() {
                 @Override
-                public void onUserPresenceUpdate(Map<String, SessionManager.UserPresence> presenceUpdate) {
+                public void onUserPresenceUpdate(Set<String>presenceUpdate) {
                     Platform.runLater(() -> {
                         showNotification("User presence updated: " + presenceUpdate);
                         // TODO: Handle user presence update logic here
 
-                        String username = presenceUpdate.get(currentUser).getUsername();
-                        System.out.println("User Name: " + username);
-                        remoteCursors.put(username, new UserCaret(0));
+                        // Clear existing remote cursors and update with new presence data
+                        userListBox.getChildren().clear();
+                        remoteCursors.clear(); // Remove all existing cursors
+                                                
+                        // Add all users from the presence update
+                        for (String username : presenceUpdate) {
+                            // Skip adding the current user to remote cursors
+                            if (!username.equals(currentUser)) {
+                                remoteCursors.put(username, new UserCaret(0));
+                            }
+                        }
                         updateUserList();
                     });
                 }
