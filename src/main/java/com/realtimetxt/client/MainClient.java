@@ -1,15 +1,9 @@
 package com.realtimetxt.client;
 
-import com.realtimetxt.client.network.ClientSocket;
 import com.realtimetxt.client.ui.EditorUI;
 import javafx.application.Application;
-import javafx.application.Platform;
-import javafx.scene.paint.Color;
-import javafx.scene.text.Text;
 import javafx.stage.Stage;
 
-import java.io.*;
-import java.net.*;
 import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;

@@ -16,7 +16,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.List;
 
 import com.realtimetxt.client.logic.CRDTController;
 import com.realtimetxt.client.network.ClientSocket;
@@ -79,12 +78,8 @@ public class EditorUI {
                         showNotification("Joined document: " + documentId);
                         isViewer = !isEditor;
 
-                        StringBuilder initialContent = new StringBuilder();
-                        for (CRDTOperation operation : operations) {
-                            crdtController.onRemoteOperation(operation);
-                        }
-                        initialContent.append(crdtController.renderText());
-                        textArea.setText(initialContent.toString());
+                        crdtController.startNewDocument(operations);
+                        updateText(crdtController.renderText(), isEditor);
 
                         // Disable editing if the user is a viewer
                         textArea.setEditable(!isViewer);
@@ -97,7 +92,7 @@ public class EditorUI {
                         showNotification("Remote operation received");
                         // TODO: Apply the CRDT operation to the local document
                         crdtController.onRemoteOperation(operation);
-                        updateText(crdtController.renderText(), false);
+                        updateText(crdtController.renderText(), true);
                     });
                 }
 

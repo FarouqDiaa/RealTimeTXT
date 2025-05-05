@@ -28,15 +28,11 @@ public class CRDTController {
         this.crdt = new CRDT();
         this.items.add(crdt.getRoot());
         this.userId = userId;
-
-        // _prepareFirstOperation();
     }
 
     public CRDTController() {
         this.crdt = new CRDT();
         this.items.add(crdt.getRoot());
-
-        // _prepareFirstOperation();
     }
 
     public void sendOperationsToServer() {
@@ -51,6 +47,7 @@ public class CRDTController {
         this.redoStack.clear();
         this.items.clear();
         this.crdt = new CRDT();
+        this.items.add(crdt.getRoot());
         for (CRDTOperation operation : operations) {
             crdt.newOperation(operation);
         }
@@ -104,7 +101,7 @@ public class CRDTController {
             CRDTOperation lastOperation = redoStack.remove(redoStack.size() - 1);
             if (lastOperation.getOperation() == OperationType.INSERT) {
                 CRDTOperation newOperation = new CRDTOperation(
-                        "0",
+                        userId,
                         OperationType.DELETE,
                         lastOperation.getValue(),
                         lastOperation.getParentId(),
@@ -164,8 +161,13 @@ public class CRDTController {
 
     public void onRemoteOperation(CRDTOperation operation) {
         isRemoteOperation = true;
+
         crdt.newOperation(operation);
+
         _updateItemsList();
+        currentText = renderText();
+
+        operations.add(operation);
     }
 
     public String renderText() {
@@ -199,12 +201,6 @@ public class CRDTController {
         undoStack.add(operation);
         operations.add(operation);
         clientSocket.sendOperation(operation);
-
-        System.out.println(
-                "Inserted: " + operation.getValue() +
-                        " at index: " + index +
-                        " with itemId: " + operation.getItemId() +
-                        " and parentId: " + operation.getParentId());
     }
 
     private void _deleteText(String newText, int index) {
