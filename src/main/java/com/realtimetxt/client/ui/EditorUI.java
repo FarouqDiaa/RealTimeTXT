@@ -230,6 +230,24 @@ public class EditorUI implements ClientSocket.TextEditorCallback {
         exportItem.setOnAction(e -> exportFile());
         fileMenu.getItems().addAll(importItem, exportItem);
 
+        // Edit Menu
+        Menu editMenu = new Menu("Edit");
+        MenuItem undoItem = new MenuItem("Undo");
+        MenuItem redoItem = new MenuItem("Redo");
+
+        // Add TODO comments for Undo and Redo logic
+        undoItem.setOnAction(e -> {
+            // TODO: Implement Undo functionality
+            showNotification("Undo action triggered (logic not implemented).");
+        });
+
+        redoItem.setOnAction(e -> {
+            // TODO: Implement Redo functionality
+            showNotification("Redo action triggered (logic not implemented).");
+        });
+
+        editMenu.getItems().addAll(undoItem, redoItem);
+
         // Collaboration Menu
         Menu collabMenu = new Menu("Collaboration");
         MenuItem requestCodesItem = new MenuItem("Request Session Codes");
@@ -247,10 +265,12 @@ public class EditorUI implements ClientSocket.TextEditorCallback {
             messageLabel.setText(""); // Clear the message
             showNotification("Session codes updated! Editing is now enabled.");
         });
+
         joinCollabItem.setOnAction(e -> showJoinSessionDialog());
 
         collabMenu.getItems().addAll(requestCodesItem, joinCollabItem);
-        menuBar.getMenus().addAll(fileMenu, collabMenu);
+
+        menuBar.getMenus().addAll(fileMenu, editMenu, collabMenu);
 
         return menuBar;
     }
