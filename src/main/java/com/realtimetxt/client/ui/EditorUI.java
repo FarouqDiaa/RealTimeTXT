@@ -77,23 +77,21 @@ public class EditorUI {
     private void initializeNetworkComponents(String userId) {
         this.clientSocket = new ClientSocket(currentUser, userId, new ClientSocket.TextEditorCallback() {
             @Override
-            public void onUserPresenceUpdate(Set<String> presenceUpdate) {
-                Platform.runLater(() -> updateUserPresence(presenceUpdate));
+            public void onDocumentCreated(String docId, String eCode, String vCode) {
+                Platform.runLater(() -> _handleDocumentCreated(docId, eCode, vCode));
             }
 
             @Override
-            public void onFullStateUpdate(String content) {
+            public void onDocumentJoined(String docId, boolean isEditor) {
                 Platform.runLater(() -> {
-                    System.out.println("Received full state update with content length: "
-                            + (content != null ? content.length() : 0));
-
-                    // Only update if we don't already have content
-                    if (textArea.getText().isEmpty()
-                            || !crdtController.renderText().equals(content)) {
-                        crdtController.replaceAllContent(content);
-                        updateText(content, false);
-                    }
+                    // Ensure we process operations before updating UI
+                    _handleDocumentJoined(docId, isEditor);
                 });
+            }
+
+            @Override
+            public void onUserPresenceUpdate(Set<String> presenceUpdate) {
+                Platform.runLater(() -> _updateUserPresence(presenceUpdate));
             }
 
             @Override
@@ -101,27 +99,19 @@ public class EditorUI {
                 Platform.runLater(() -> {
                     if (!username.equals(currentUser)) {
                         remoteCursors.put(username, new UserCaret(position));
-                        updateUserList();
+                        _updateUserList();
                     }
                 });
             }
 
             @Override
-            public void onDocumentCreated(String docId, String eCode, String vCode) {
-                Platform.runLater(() -> handleDocumentCreated(docId, eCode, vCode));
-            }
-
-            @Override
-            public void onDocumentJoined(String docId, boolean isEditor, List<CRDTOperation> ops) {
-                Platform.runLater(() -> {
-                    // Ensure we process operations before updating UI
-                    handleDocumentJoined(docId, isEditor, ops);
-                });
-            }
-
-            @Override
             public void onRemoteOperation(CRDTOperation operation) {
-                Platform.runLater(() -> handleRemoteOperation(operation));
+                Platform.runLater(() -> _handleRemoteOperation(operation));
+            }
+
+            @Override
+            public void onRemoteBulkOperation(List<CRDTOperation> operations) {
+                // Platform.runLater(() -> _handleRemoteBulkOperation(operations));
             }
 
             @Override
@@ -149,7 +139,7 @@ public class EditorUI {
         this.crdtController = new CRDTController(clientSocket, userId);
     }
 
-    private void handleDocumentCreated(String docId, String eCode, String vCode) {
+    private void _handleDocumentCreated(String docId, String eCode, String vCode) {
         currentDocumentId = docId;
         editorCode = eCode;
         viewerCode = vCode;
@@ -159,9 +149,10 @@ public class EditorUI {
         textArea.setEditable(true);
         isViewer = false;
         textArea.setStyle("");
+        crdtController.openNewDocument();
     }
 
-    private void handleDocumentJoined(String docId, boolean isEditor, List<CRDTOperation> ops) {
+    private void _handleDocumentJoined(String docId, boolean isEditor) {
         currentDocumentId = docId;
         isViewer = !isEditor;
 
@@ -177,44 +168,22 @@ public class EditorUI {
         }
 
         // Clear current state before applying operations
-        crdtController.startNewDocument(new ArrayList<>());
-
-        // Log the operations count received
-        System.out.println("Received " + (ops != null ? ops.size() : 0) + " operations when joining document");
+        crdtController.openNewDocument();
 
         // Apply operations immediately if we have them
-        if (ops != null && !ops.isEmpty()) {
-            Platform.runLater(() -> {
-                try {
-                    // Apply all operations in order
-                    for (CRDTOperation op : ops) {
-                        crdtController.onRemoteOperation(op);
-                    }
+        Platform.runLater(() -> {
+            try {
+                // Send our cursor position after text is updated
+                clientSocket.sendCursorPosition(0);
 
-                    // Render the text after all operations are applied
-                    String textContent = crdtController.renderText();
-                    System.out.println("Rendered text content length after joining: " + textContent.length());
-                    textArea.setText(textContent);
-
-                    // Send our cursor position after text is updated
-                    clientSocket.sendCursorPosition(0);
-
-                    // Request user presence information explicitly
-                    clientSocket.requestUserPresence(docId);
-                } catch (Exception e) {
-                    System.err.println("Error applying operations: " + e.getMessage());
-                    e.printStackTrace();
-                }
-            });
-        } else {
-            // If no operations, explicitly request full state with retry mechanism
-            System.out.println("No operations received, requesting full state...");
-            if (clientSocket.isConnected()) {
-                requestFullStateWithRetry(docId);
+                // Request user presence information explicitly
+                clientSocket.requestUserPresence(docId);
+            } catch (Exception e) {
+                System.err.println("Error applying operations: " + e.getMessage());
+                e.printStackTrace();
             }
-        }
+        });
 
-        // Set up the window close handler to properly leave the document
         // Set up the window close handler to properly leave the document
         primaryStage.setOnCloseRequest(event -> {
             if (clientSocket != null && clientSocket.isConnected() && currentDocumentId != null
@@ -227,38 +196,11 @@ public class EditorUI {
         });
     }
 
-    private void requestFullStateWithRetry(String docId) {
-        System.out.println("Requesting full state for document: " + docId);
-
-        clientSocket.sendFullStateRequest(docId);
-
-        // Also explicitly request user presence
-        clientSocket.requestUserPresence(docId);
-
-        // Setup a retry timer in case we don't get a response
-        new java.util.Timer().schedule(
-                new java.util.TimerTask() {
-            @Override
-            public void run() {
-                Platform.runLater(() -> {
-                    // Only retry if the text area is still empty
-                    if (textArea.getText().isEmpty() && clientSocket.isConnected()) {
-                        System.out.println("Retrying full state request");
-                        clientSocket.sendFullStateRequest(docId);
-                        clientSocket.requestUserPresence(docId);
-                    }
-                });
-            }
-        },
-                2000 // 2-second delay before retry
-        );
-    }
-
-    private void handleRemoteOperation(CRDTOperation operation) {
+    private void _handleRemoteOperation(CRDTOperation operation) {
+        int currentPos = textArea.getCaretPosition();
         crdtController.onRemoteOperation(operation);
         // Update text and ensure cursor positions are maintained
         Platform.runLater(() -> {
-            int currentPos = textArea.getCaretPosition();
             String newText = crdtController.renderText();
             textArea.setText(newText);
 
@@ -273,20 +215,23 @@ public class EditorUI {
             // Added delay to ensure UI updates before sending cursor
             new java.util.Timer().schedule(
                     new java.util.TimerTask() {
-                @Override
-                public void run() {
-                    Platform.runLater(() -> {
-                        clientSocket.sendCursorPosition(textArea.getCaretPosition());
-                        // Force update of user list to reflect new line numbers
-                        updateUserList();
-                    });
-                }
-            },
+                        @Override
+                        public void run() {
+                            Platform.runLater(() -> {
+                                clientSocket.sendCursorPosition(textArea.getCaretPosition());
+                                // Force update of user list to reflect new line numbers
+                                _updateUserList();
+                            });
+                        }
+                    },
                     100 // 100ms delay
             );
         });
     }
 
+    /*
+     * * Setup the main UI components and layout
+     */
     private void setupMainUI() {
         BorderPane root = new BorderPane();
         root.setTop(createMenuBar());
@@ -316,16 +261,16 @@ public class EditorUI {
         Menu editMenu = new Menu("Edit");
         MenuItem undoItem = new MenuItem("Undo (Ctrl+Z)");
         MenuItem redoItem = new MenuItem("Redo (Ctrl+Y)");
-        undoItem.setOnAction(e -> performUndo());
-        redoItem.setOnAction(e -> performRedo());
+        undoItem.setOnAction(e -> _performUndo());
+        redoItem.setOnAction(e -> _performRedo());
         editMenu.getItems().addAll(undoItem, redoItem);
 
         // Collaboration Menu
         Menu collabMenu = new Menu("Collaboration");
         MenuItem newDocItem = new MenuItem("New Document");
         MenuItem joinDocItem = new MenuItem("Join Document");
-        newDocItem.setOnAction(e -> createNewDocument());
-        joinDocItem.setOnAction(e -> showJoinDialog());
+        newDocItem.setOnAction(e -> _createNewDocument());
+        joinDocItem.setOnAction(e -> _showJoinDialog());
         collabMenu.getItems().addAll(newDocItem, joinDocItem);
 
         menuBar.getMenus().addAll(fileMenu, editMenu, collabMenu);
@@ -348,7 +293,7 @@ public class EditorUI {
         // Cursor position listener
         textArea.caretPositionProperty().addListener((obs, oldPos, newPos) -> {
             if (clientSocket != null && clientSocket.isConnected() && currentDocumentId != null) {
-                int position = newPos.intValue();
+                int position = textArea.getCaretPosition();
                 remoteCursors.put(currentUser, new UserCaret(position));
                 clientSocket.sendCursorPosition(position);
 
@@ -356,7 +301,7 @@ public class EditorUI {
                 System.out.println("Sending cursor position: " + position + " for " + currentUser);
 
                 // Update UI to reflect current positions
-                updateUserList();
+                _updateUserList();
             }
         });
 
@@ -388,7 +333,7 @@ public class EditorUI {
         // Active Users
         VBox usersBox = new VBox(5);
         userCountLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 14px;");
-        updateUserList();
+        _updateUserList();
         usersBox.getChildren().addAll(userCountLabel, userListBox);
 
         sidebar.getChildren().addAll(statusBox, new Separator(), codesBox, new Separator(), usersBox);
@@ -409,8 +354,12 @@ public class EditorUI {
         return box;
     }
 
-    private void updateUserPresence(Set<String> presenceUpdate) {
-        System.out.println("User presence update received with " + presenceUpdate.size() + " users: " + String.join(", ", presenceUpdate));
+    /*
+     * * Update the user presence list and cursor positions
+     */
+    private void _updateUserPresence(Set<String> presenceUpdate) {
+        System.out.println("User presence update received with " + presenceUpdate.size() + " users: "
+                + String.join(", ", presenceUpdate));
 
         // Always ensure current user is present in the list
         Set<String> allUsers = new HashSet<>(presenceUpdate);
@@ -432,16 +381,15 @@ public class EditorUI {
         }
 
         // Update the UI
-        updateUserList();
+        _updateUserList();
 
         // After user list update, send our current cursor position again
         if (clientSocket != null && clientSocket.isConnected() && currentDocumentId != null) {
-            int position = textArea.getCaretPosition();
-            clientSocket.sendCursorPosition(position);
+            clientSocket.sendCursorPosition(textArea.getCaretPosition());
         }
     }
 
-    private void updateUserList() {
+    private void _updateUserList() {
         userListBox.getChildren().clear();
 
         // Create a distinct set of usernames
@@ -468,7 +416,7 @@ public class EditorUI {
                             int position = caret.getPosition();
                             // Get the current text to calculate line correctly
                             String currentText = textArea.getText();
-                            int line = calculateLineNumber(currentText, position);
+                            int line = _calculateLineNumber(currentText, position);
                             Label userLabel = new Label("• " + username + " (line " + line + ")");
                             userLabel.setStyle("-fx-text-fill: #1565C0;");
                             userListBox.getChildren().add(userLabel);
@@ -489,7 +437,7 @@ public class EditorUI {
                 });
     }
 
-    private int calculateLineNumber(String text, int position) {
+    private int _calculateLineNumber(String text, int position) {
         if (text == null || text.isEmpty()) {
             return 1;
         }
@@ -508,11 +456,10 @@ public class EditorUI {
         return line;
     }
 
-    private int getLineNumber(int position) {
-        return calculateLineNumber(textArea.getText(), position);
-    }
-
-    private void createNewDocument() {
+    /*
+     * * Create a new document and set the editor code
+     */
+    private void _createNewDocument() {
         if (clientSocket.connect()) {
             clientSocket.createNewDocument();
         } else {
@@ -520,7 +467,10 @@ public class EditorUI {
         }
     }
 
-    private void showJoinDialog() {
+    /*
+     * * Show a dialog to join an existing document with a code
+     */
+    private void _showJoinDialog() {
         TextInputDialog dialog = new TextInputDialog();
         dialog.setTitle("Join Document");
         dialog.setHeaderText("Enter document code:");
@@ -531,21 +481,27 @@ public class EditorUI {
         });
     }
 
-    private void performUndo() {
+    /*
+     * * Perform undo and redo operations
+     */
+    private void _performUndo() {
         if (!isViewer) {
             crdtController.undo();
-            updateText(crdtController.renderText(), true);
+            _updateText(crdtController.renderText(), true);
         }
     }
 
-    private void performRedo() {
+    private void _performRedo() {
         if (!isViewer) {
             crdtController.redo();
-            updateText(crdtController.renderText(), true);
+            _updateText(crdtController.renderText(), true);
         }
     }
 
-    private void updateText(String text, boolean preserveCaret) {
+    /*
+     * * Update the text area with new content and preserve caret position
+     */
+    private void _updateText(String text, boolean preserveCaret) {
         int caretPos = textArea.getCaretPosition();
         textArea.setText(text);
         if (preserveCaret) {
@@ -573,8 +529,7 @@ public class EditorUI {
 
         fileChooser.getExtensionFilters().addAll(
                 new FileChooser.ExtensionFilter("Text Files", "*.txt"),
-                new FileChooser.ExtensionFilter("All Files", "*.*")
-        );
+                new FileChooser.ExtensionFilter("All Files", "*.*"));
 
         File file = fileChooser.showOpenDialog(primaryStage);
 
@@ -585,8 +540,7 @@ public class EditorUI {
                         Alert.AlertType.CONFIRMATION,
                         "Importing will replace current document. Continue?",
                         ButtonType.YES,
-                        ButtonType.NO
-                );
+                        ButtonType.NO);
 
                 alert.showAndWait().ifPresent(response -> {
                     if (response == ButtonType.YES) {
@@ -606,20 +560,12 @@ public class EditorUI {
 
             content = content.replace("\r\n", "\n"); // Normalize line endings
 
-            if (clientSocket != null && clientSocket.isConnected() && currentDocumentId != null && !currentDocumentId.isEmpty()) {
-                // Clear current CRDT state
-                crdtController.importText(content);
+            if (clientSocket != null && clientSocket.isConnected() && currentDocumentId != null
+                    && !currentDocumentId.isEmpty()) {
 
-                // Broadcast the updated full state to all users
-                String finalText = crdtController.renderText();
-                Map<String, Object> payload = new HashMap<>();
-                payload.put("userId", crdtController.getUserId());
-                payload.put("documentId", currentDocumentId);
-                payload.put("content", finalText);
-                clientSocket.stompSession.send("/app/document/" + currentDocumentId + "/fullState", payload);
+                crdtController.setImportedText(content);
+                textArea.setText(crdtController.renderText());
 
-                // Update local UI
-                updateText(finalText, false);
                 statusLabel.setText("File imported and synchronized with collaborators");
             } else {
                 showAlert("Import Error", "Not connected to a document");

@@ -15,8 +15,6 @@ public class CRDTOperation {
     private String value = null;
     private UUID parentId = null;
     private UUID itemId = null;
-    private boolean fullState = false;
-    private String content;
 
     public CRDTOperation() {
     }
@@ -91,21 +89,5 @@ public class CRDTOperation {
 
     public void setOperation(OperationType operation) {
         this.operation = operation;
-    }
-
-    public boolean isFullState() {
-        return fullState;
-    }
-
-    public void setFullState(boolean fullState) {
-        this.fullState = fullState;
-    }
-
-    public String getContent() {
-        return content;
-    }
-
-    public void setContent(String content) {
-        this.content = content;
     }
 }
