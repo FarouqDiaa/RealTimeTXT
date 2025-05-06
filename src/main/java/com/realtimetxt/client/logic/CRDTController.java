@@ -20,6 +20,7 @@ public class CRDTController {
     private boolean isRedoing = false;
     private boolean isRemoteOperation = false;
     private boolean isImporting = false;
+    private boolean newDocument = false;
     private ClientSocket clientSocket;
     private String userId;
     private ArrayList<CRDTOperation> operations = new ArrayList<>();
@@ -51,6 +52,8 @@ public class CRDTController {
         this.crdt = new CRDT();
         this.items.add(crdt.getRoot());
         _updateItemsList();
+        currentText = renderText();
+        newDocument = true;
     }
 
     synchronized public void undo() {
@@ -133,12 +136,19 @@ public class CRDTController {
     }
 
     synchronized public void setImportedText(String newText) {
+        newDocument = false;
         textChanged("", currentText.length());
         textChanged(newText, 0);
         isImporting = true;
     }
 
     synchronized public void textChanged(String newText, int index) {
+        if (newDocument && newText.isEmpty()) {
+            System.out.println("New document opened, ignoring text change.");
+            newDocument = false;
+            return;
+        }
+
         System.out.println("Text changed: " + newText + " at index: " + index);
         if (isUndoing || isRedoing || isRemoteOperation || isImporting) {
             isRemoteOperation = false;
@@ -167,6 +177,8 @@ public class CRDTController {
     }
 
     synchronized public void onRemoteOperation(CRDTOperation newOperation) {
+        newDocument = false;
+
         for (CRDTOperation operation : operations) {
             if (operation.getId().equals(newOperation.getId())) {
                 System.out.println("Duplicate operation detected: " + newOperation.getId());

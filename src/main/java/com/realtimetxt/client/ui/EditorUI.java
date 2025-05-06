@@ -150,6 +150,9 @@ public class EditorUI {
         isViewer = false;
         textArea.setStyle("");
         crdtController.openNewDocument();
+        if (!textArea.getText().isEmpty()) {
+            _updateText("", false);
+        }
     }
 
     private void _handleDocumentJoined(String docId, boolean isEditor) {
@@ -169,6 +172,7 @@ public class EditorUI {
 
         // Clear current state before applying operations
         crdtController.openNewDocument();
+        _updateText("", false);
 
         // Apply operations immediately if we have them
         Platform.runLater(() -> {
