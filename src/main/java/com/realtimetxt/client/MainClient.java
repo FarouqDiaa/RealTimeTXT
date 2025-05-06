@@ -9,6 +9,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainClient extends Application {
+
     private EditorUI ui;
     private ExecutorService executor;
     private String username;
@@ -28,8 +29,8 @@ public class MainClient extends Application {
     }
 
     private String generateUsername() {
-        String[] adjectives = { "Anonymous", "Happy", "Sleepy", "Curious", "Excited" };
-        String[] animals = { "Frog", "Bear", "Cat", "Dog", "Rabbit", "Lion", "Tiger" };
+        String[] adjectives = {"Anonymous", "Happy", "Sleepy", "Curious", "Excited"};
+        String[] animals = {"Frog", "Bear", "Cat", "Dog", "Rabbit", "Lion", "Tiger"};
 
         Random random = new Random();
         String adjective = adjectives[random.nextInt(adjectives.length)];

@@ -1,12 +1,14 @@
 package com.realtimetxt.server;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
@@ -16,7 +18,8 @@ import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
-import com.realtimetxt.server.SessionManager.UserPresence;
+import com.realtimetxt.client.logic.CRDT;
+import com.realtimetxt.client.logic.CRDTItem;
 import com.realtimetxt.shared.CRDTOperation;
 import com.realtimetxt.shared.enums.OperationType;
 
@@ -29,7 +32,6 @@ public class ServerSocketHandler {
     @Autowired
     private SessionManager manager;
 
-    // Store document data for retrieval
     private final Map<String, List<CRDTOperation>> documentData = new ConcurrentHashMap<>();
 
     @MessageMapping("/createDocument")
@@ -38,284 +40,371 @@ public class ServerSocketHandler {
         String username = (String) payload.get("username");
 
         if (userId == null || username == null) {
-            System.err.println("Error: User ID and username are required");
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("success", false);
-            errorResponse.put("errorMessage", "User ID and username are required");
-            messagingTemplate.convertAndSend("/topic/createResponse/" + userId, errorResponse);
+            sendErrorResponse("/topic/createResponse/" + userId, "User ID and username are required");
             return;
         }
 
         String documentId = UUID.randomUUID().toString();
         Map<String, String> codes = manager.createSession(documentId);
-        String editorCode = codes.get("editor");
-        String viewerCode = codes.get("viewer");
 
-        manager.joinSession(userId, editorCode);
-
-        // Initialize document data
+        manager.joinSession(userId, codes.get("editor"), username);
         documentData.put(documentId, new CopyOnWriteArrayList<>());
-
-        Map<String, Object> response = new HashMap<>();
-        response.put("documentId", documentId);
-        response.put("editorCode", editorCode);
-        response.put("viewerCode", viewerCode);
-        response.put("success", true);
-
         manager.addUserToDocument(documentId, userId, username, true);
 
-        // Send all currently active users to the joining user
-        Map<String, Object> userListMessage = new HashMap<>();
-        userListMessage.put("users", manager.getDocumentUsers(documentId));
-        messagingTemplate.convertAndSend("/topic/document/" + documentId + "/users", userListMessage);
-
-        messagingTemplate.convertAndSend("/topic/createResponse/" + userId, response);
+        sendUserListUpdate(documentId);
+        messagingTemplate.convertAndSend("/topic/createResponse/" + userId, Map.of(
+                "documentId", documentId,
+                "editorCode", codes.get("editor"),
+                "viewerCode", codes.get("viewer"),
+                "success", true
+        ));
 
         System.out.println("Created document: " + documentId + " for user: " + userId);
     }
 
     @MessageMapping("/joinDocument")
     public void joinDocument(@Payload Map<String, Object> payload) {
-        String username = (String) payload.get("username");
         String userId = (String) payload.get("userId");
+        String username = (String) payload.get("username");
         String sharingCode = (String) payload.get("sharingCode");
 
-        Map<String, Object> response = new HashMap<>();
-
-        // Validate required fields
-        if (username == null || userId == null || sharingCode == null) {
-            String errorMessage = "Username, user ID, and sharing code are required";
-            System.err.println("Error: " + errorMessage);
-            response.put("success", false);
-            response.put("errorMessage", errorMessage);
-            messagingTemplate.convertAndSend("/topic/joinResponse/" + userId, response);
-            return;
-        }
-
-        if (!manager.isEditorOrViewerCode(sharingCode)) {
-            response.put("success", false);
-            response.put("errorMessage", "Invalid sharing code");
-            messagingTemplate.convertAndSend("/topic/joinResponse/" + userId, response);
+        if (userId == null || username == null || sharingCode == null) {
+            sendErrorResponse("/topic/joinResponse/" + userId, "User ID, username, and sharing code are required");
             return;
         }
 
         String documentId = manager.getDocumentFromCode(sharingCode);
         if (documentId == null) {
-            response.put("success", false);
-            response.put("errorMessage", "Document not found");
-            messagingTemplate.convertAndSend("/topic/joinResponse/" + userId, response);
+            sendErrorResponse("/topic/joinResponse/" + userId, "Document not found");
             return;
         }
 
-        boolean isEditor = manager.isEditorCode(sharingCode, documentId);
-        String roleType = isEditor ? "editor" : "viewer";
-
-        // Check if user is already in the document with the same role
-        if (manager.isUserInDocument(userId, documentId, roleType)) {
-            response.put("success", false);
-            response.put("errorMessage", "Already joined as " + roleType);
-            messagingTemplate.convertAndSend("/topic/joinResponse/" + userId, response);
+        // Check if the code is valid and get the role
+        String role = manager.getCodeRole(sharingCode);
+        if (role == null) {
+            sendErrorResponse("/topic/joinResponse/" + userId, "Invalid sharing code");
             return;
         }
 
-        // Join the user to the document
-        manager.joinSession(userId, sharingCode);
+        boolean isEditor = "editor".equals(role);
 
+        if (!manager.joinSession(userId, sharingCode, username)) {
+            sendErrorResponse("/topic/joinResponse/" + userId, "Failed to join session with provided sharing code");
+            return;
+        }
+
+        // Add user to document with proper role
         manager.addUserToDocument(documentId, userId, username, isEditor);
-        // Get current users in the document
-        Set<UserPresence> users = manager.getDocumentUsers(documentId);
-        // Create a map to send to clients with user information
-        Set<String> usernames = users.stream()
-            .map(UserPresence::getUsername)
-            .collect(java.util.stream.Collectors.toSet());
-        Map<String, Set<String>> userListMessage = new HashMap<>();
-        userListMessage.put("users", usernames);
 
+        // Get the current document operations with proper serialization
+        List<Map<String, Object>> serializedOps = new ArrayList<>();
+        List<CRDTOperation> docOps = documentData.getOrDefault(documentId, new ArrayList<>());
 
+        for (CRDTOperation op : docOps) {
+            Map<String, Object> opMap = new HashMap<>();
+            opMap.put("userId", op.getUserId());
+            opMap.put("operation", op.getOperation().toString());
+            opMap.put("value", op.getValue());
+            opMap.put("parentId", op.getParentId().toString());
+            opMap.put("itemId", op.getItemId().toString());
+            serializedOps.add(opMap);
+        }
 
-        
-        messagingTemplate.convertAndSend("/topic/document/" + documentId + "/users", userListMessage);
+        // Notify all users about the updated user list
+        sendUserListUpdate(documentId);
 
-        // Ensure document data is initialized or apply existing data
-        documentData.putIfAbsent(documentId, new CopyOnWriteArrayList<>());
-        List<CRDTOperation> existingData = documentData.get(documentId);
-
-        // Send join response
-        response.put("success", true);
+        // Send response to joining user with correctly serialized data
+        Map<String, Object> response = new HashMap<>();
         response.put("documentId", documentId);
         response.put("isEditor", isEditor);
-        response.put("existingData", existingData);
+        response.put("success", true);
+        response.put("existingData", serializedOps);
+        response.put("currentUsers", manager.getDocumentUsers(documentId).stream()
+                .map(u -> Map.of(
+                "username", u.getUsername(),
+                "isEditor", u.isEditor()
+        ))
+                .collect(Collectors.toList()));
 
         messagingTemplate.convertAndSend("/topic/joinResponse/" + userId, response);
-        messagingTemplate.convertAndSend("/topic/document/" + documentId, response);
 
-        System.out.println("User " + userId + " joined document " + documentId + " as " + roleType);
+        // Send full state to ensure consistency
+        String content = buildContentFromOperations(docOps);
+        CRDTOperation fullStateOp = new CRDTOperation();
+        fullStateOp.setFullState(true);
+        fullStateOp.setContent(content);
+
+        messagingTemplate.convertAndSendToUser(
+                userId,
+                "/queue/document/" + documentId + "/operations",
+                fullStateOp
+        );
+
+        System.out.println("User " + userId + " joined document " + documentId + " as " + (isEditor ? "editor" : "viewer"));
     }
 
-    /**
-     * Handles document operations (inserts/deletes)
-     */
-    @MessageMapping("/document/{documentId}/operation")
-    public void handleOperation(@DestinationVariable String documentId, @Payload Map<String, Object> payload) {
-        String userId = (String) payload.get("userId");
-        System.out.println("Received operation from user " + userId + " on document " + documentId);
+    private boolean validateEditorRole(String userId, String documentId) {
+        if (userId == null || documentId == null) {
+            return false;
+        }
 
-        // Validate user and permissions
-        if (userId == null) {
-            System.err.println("Error: User ID is required for operations");
+        String role = manager.getUserRole(userId, documentId);
+        return role != null && "editor".equals(role);
+    }
+
+    @MessageMapping("/document/{documentId}/operation")
+    public void handleOperation(@DestinationVariable String documentId, @Payload CRDTOperation operation) {
+        String userId = operation.getUserId();
+
+        if (!validateEditorRole(userId, documentId)) {
+            System.err.println("Unauthorized operation from user: " + userId);
             return;
         }
 
-        String userRole = manager.getUserRole(userId, documentId);
-        if (userRole == null) {
-            System.err.println("Error: User " + userId + " is not in document " + documentId);
-            return; // User is not in the document
-        }
+        // Check for duplicate operations by looking at the itemId
+        synchronized (documentData) {
+            boolean isDuplicate = documentData.getOrDefault(documentId, Collections.emptyList())
+                    .stream()
+                    .anyMatch(op -> op.getItemId().equals(operation.getItemId()));
 
-        if (!manager.getUserDocuments(userId).contains(documentId)) {
-            System.err.println("Error: User " + userId + " is not in the correct document");
-            return; // User is not in the correct document
-        }
-
-        if (!userRole.equals("editor")) {
-            System.err.println("Error: User " + userId + " is not an editor and cannot perform operations");
-            return; // Only editors can perform operations
-        }
-
-        // Extract operation details from payload
-        try {
-            // Assuming the payload contains the operation details or a serialized
-            // CRDTOperation
-            CRDTOperation operation = extractOperationFromPayload(payload);
-
-            if (operation == null) {
-                System.err.println("Error: Invalid operation data");
+            if (isDuplicate) {
+                System.err.println("Duplicate operation detected for itemId: " + operation.getItemId());
                 return;
             }
 
-            // Safely get or create the document's operation list
-            List<CRDTOperation> operations = documentData.computeIfAbsent(documentId,
-                    k -> new CopyOnWriteArrayList<>());
+            documentData.computeIfAbsent(documentId, k -> new CopyOnWriteArrayList<>()).add(operation);
 
-            // Add the operation
-            operations.add(operation);
-
-            // Broadcast the operation to all clients
+            // Broadcast to all subscribers and to the user's personal queue
             messagingTemplate.convertAndSend("/topic/document/" + documentId + "/operations", operation);
-
-            System.out.println("Operation from user " + userId + " on document " + documentId
-                    + ": " + operation.getOperation()
-                    + (operation.getValue() != null ? " '" + operation.getValue() + "'" : ""));
-        } catch (Exception e) {
-            System.err.println("Error processing operation: " + e.getMessage());
-            e.printStackTrace();
+            messagingTemplate.convertAndSendToUser(userId, "/queue/document/" + documentId + "/operations", operation);
         }
     }
 
-    /**
-     * Extract a CRDTOperation from the payload map
-     */
-    private CRDTOperation extractOperationFromPayload(Map<String, Object> payload) {
-        try {
-            // Extract parameters based on the actual CRDTOperation class structure
-            String userId = (String) payload.get("userId");
-            String operationTypeStr = (String) payload.get("operation");
-            String value = (String) payload.get("value");
-            String parentIdStr = (String) payload.get("parentId");
-            String itemIdStr = (String) payload.get("itemId");
-
-            // Validate required fields
-            if (userId == null || operationTypeStr == null) {
-                System.err.println("Error: userId and operation are required for CRDTOperation");
-                return null;
-            }
-
-            // Convert operation string to enum
-            OperationType operationType;
-            try {
-                operationType = OperationType.valueOf(operationTypeStr.toUpperCase());
-            } catch (IllegalArgumentException e) {
-                System.err.println("Error: Invalid operation type: " + operationTypeStr);
-                return null;
-            }
-
-            // Convert string IDs to UUID objects
-            UUID parentId = null;
-            if (parentIdStr != null) {
-                try {
-                    parentId = UUID.fromString(parentIdStr);
-                } catch (IllegalArgumentException e) {
-                    System.err.println("Error: Invalid parent ID format: " + parentIdStr);
-                    return null;
-                }
-            }
-
-            // If itemId is provided, use it, otherwise let the constructor generate a new
-            // one
-            if (itemIdStr != null) {
-                try {
-                    UUID itemId = UUID.fromString(itemIdStr);
-                    return new CRDTOperation(userId, operationType, value, parentId, itemId);
-                } catch (IllegalArgumentException e) {
-                    System.err.println("Error: Invalid item ID format: " + itemIdStr);
-                    return null;
-                }
-            } else {
-                return new CRDTOperation(userId, operationType, value, parentId);
-            }
-        } catch (Exception e) {
-            System.err.println("Failed to extract operation from payload: " + e.getMessage());
-            e.printStackTrace();
-            return null;
-        }
-    }
-
-    /**
-     * Handles user leaving the document
-     */
     @MessageMapping("/leaveDocument")
     public void leaveDocument(@Payload Map<String, Object> payload, SimpMessageHeaderAccessor headerAccessor) {
         String userId = (String) payload.get("userId");
         String documentId = (String) payload.get("documentId");
-        String username = (String) payload.get("username");
+        String username = (String) payload.get("username"); // Add username to payload
 
-        if (userId == null || documentId == null || username == null) {
-            System.err.println("Error: User ID, document ID, and username are required to leave a document");
+        if (userId == null || documentId == null) {
+            System.err.println("Error: User ID and document ID are required to leave a document");
             return;
         }
 
-        // Remove user from session
-        manager.leaveSession(userId, documentId);
+        System.out.println("User " + userId + " is leaving document " + documentId);
 
-        // Clean up session attributes
-        if (headerAccessor.getSessionAttributes() != null) {
-            headerAccessor.getSessionAttributes().remove("documentId");
-            headerAccessor.getSessionAttributes().remove("username");
-            headerAccessor.getSessionAttributes().remove("userId");
-        }
-
-        // Notify other users
+        // Remove user from document in session manager
         manager.removeUserFromDocument(documentId, userId);
 
-        // Send all currently active users to the joining user
-        Map<String, Object> userListMessage = new HashMap<>();
-        userListMessage.put("users", manager.getDocumentUsers(documentId));
-        messagingTemplate.convertAndSend("/topic/document/" + documentId + "/users", userListMessage.get("users"));
-
-        System.out.println("User " + userId + " left document " + documentId);
-    }
-
-    private void notifyUserPresence(String documentId, String userId, String username, boolean isJoining) {
-        if (documentId == null || userId == null || username == null) {
-            System.err.println("Error: Document ID, user ID, and username are required for presence notification");
-            return;
+        // Clear session attributes
+        if (headerAccessor.getSessionAttributes() != null) {
+            headerAccessor.getSessionAttributes().clear();
         }
 
-        Map<String, Object> presenceUpdate = new HashMap<>();
-        presenceUpdate.put("userId", userId);
-        presenceUpdate.put("username", username);
-        presenceUpdate.put("joining", isJoining);
+        // Force immediate update to all clients
+        sendUserListUpdate(documentId);
 
-        messagingTemplate.convertAndSend("/topic/document/" + documentId + "/users", presenceUpdate);
+        // Log user leaving
+        System.out.println("User " + username + " (" + userId + ") has left document " + documentId);
+
+        // Add a slightly longer delay to ensure message propagation
+        try {
+            Thread.sleep(200);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
+
+    @MessageMapping("/document/{documentId}/cursor")
+    public void handleCursorPosition(
+            @DestinationVariable String documentId,
+            @Payload Map<String, Object> payload) {
+
+        String userId = (String) payload.get("userId");
+        String username = (String) payload.get("username");
+        int position = (int) payload.get("position");
+
+        // Refresh user presence
+        manager.refreshUserPresence(documentId, userId);
+
+        // Broadcast cursor position to all subscribers
+        try {
+            messagingTemplate.convertAndSend("/topic/document/" + documentId + "/cursors", Map.of(
+                    "userId", userId,
+                    "username", username,
+                    "position", position
+            ));
+
+            // Don't send a user list update on every cursor position to avoid feedback loops
+            // Only send user list updates if a user actually joins or leaves
+            // sendUserListUpdate(documentId);  <-- Comment out this line
+            System.out.println("Broadcasting cursor position for " + username + " at position " + position);
+        } catch (Exception e) {
+            System.err.println("Error broadcasting cursor position: " + e.getMessage());
+        }
+    }
+
+    @MessageMapping("/document/{documentId}/fullState")
+    public void handleFullState(
+            @DestinationVariable String documentId,
+            @Payload Map<String, Object> payload) {
+
+        String userId = (String) payload.get("userId");
+        String content = (String) payload.get("content");
+
+        if (validateEditorRole(userId, documentId) && content != null) {
+            // Clear existing operations
+            documentData.put(documentId, new CopyOnWriteArrayList<>());
+
+            // Convert content to CRDTOperations
+            List<CRDTOperation> operations = convertTextToOperations(userId, content);
+            documentData.get(documentId).addAll(operations);
+
+            // Broadcast to all clients
+            operations.forEach(op
+                    -> messagingTemplate.convertAndSend(
+                            "/topic/document/" + documentId + "/operations",
+                            op
+                    )
+            );
+        }
+    }
+
+    @MessageMapping("/document/{documentId}/requestFullState")
+    public void handleFullStateRequest(
+            @DestinationVariable String documentId,
+            @Payload Map<String, Object> payload) {
+
+        String requestingUserId = (String) payload.get("userId");
+        String username = (String) payload.get("username");
+
+        System.out.println("Full state requested by user: " + username + " (" + requestingUserId + ") for document: " + documentId);
+
+        // Get the current document state
+        List<CRDTOperation> docOps = documentData.getOrDefault(documentId, new ArrayList<>());
+
+        // Create a special operation for the full state
+        CRDTOperation fullStateOp = new CRDTOperation();
+        fullStateOp.setFullState(true);
+
+        // Build content from operations
+        String content = buildContentFromOperations(docOps);
+        fullStateOp.setContent(content);
+
+        // Debug output
+        System.out.println("Sending full state with content length: "
+                + (content != null ? content.length() : 0)
+                + " and operations count: " + docOps.size());
+
+        try {
+            // Send directly to the requesting user via their personal queue
+            messagingTemplate.convertAndSendToUser(
+                    requestingUserId,
+                    "/queue/document/" + documentId + "/operations",
+                    fullStateOp
+            );
+
+            // Also send to topic to ensure all users are synchronized
+            messagingTemplate.convertAndSend(
+                    "/topic/document/" + documentId + "/operations",
+                    fullStateOp
+            );
+        } catch (Exception e) {
+            System.err.println("Error sending full state: " + e.getMessage());
+            e.printStackTrace();
+        }
+
+        // Ensure user list is also sent
+        sendUserListUpdate(documentId);
+
+        // Refresh this user's presence
+        manager.refreshUserPresence(documentId, requestingUserId);
+    }
+
+    private String buildContentFromOperations(List<CRDTOperation> operations) {
+        // Create a temporary CRDT to process operations
+        CRDT tempCrdt = new CRDT();
+
+        // Apply all operations
+        for (CRDTOperation op : operations) {
+            tempCrdt.newOperation(op);
+        }
+
+        // Build a properly ordered traversal of non-deleted nodes
+        StringBuilder sb = new StringBuilder();
+        List<CRDTItem> orderedItems = new ArrayList<>();
+        collectItemsInOrder(tempCrdt.getRoot(), orderedItems);
+
+        // Skip the root item (which has no value) and append values
+        for (int i = 1; i < orderedItems.size(); i++) {
+            CRDTItem item = orderedItems.get(i);
+            sb.append(item.getValue());
+        }
+
+        return sb.toString();
+    }
+
+    private void collectItemsInOrder(CRDTItem root, List<CRDTItem> items) {
+        if (root == null) {
+            return;
+        }
+        if (!root.isDeleted()) {
+            items.add(root);
+        }
+        for (CRDTItem child : root.getChildren()) {
+            collectItemsInOrder(child, items);
+        }
+    }
+
+    private List<CRDTOperation> convertTextToOperations(String userId, String text) {
+        List<CRDTOperation> operations = new ArrayList<>();
+        CRDT tempCrdt = new CRDT();
+        CRDTItem currentParent = tempCrdt.getRoot();
+
+        for (char c : text.toCharArray()) {
+            CRDTOperation op = new CRDTOperation(
+                    userId,
+                    OperationType.INSERT,
+                    String.valueOf(c),
+                    currentParent.getId(),
+                    UUID.randomUUID()
+            );
+            operations.add(op);
+            tempCrdt.newOperation(op);
+            currentParent = tempCrdt.findCrItem(op.getItemId());
+        }
+
+        return operations;
+    }
+
+    private CRDTOperation extractOperationFromPayload(Map<String, Object> payload) {
+        try {
+            String operationTypeStr = (String) payload.get("operation");
+            OperationType operationType = OperationType.valueOf(operationTypeStr.toUpperCase());
+            return new CRDTOperation(
+                    (String) payload.get("userId"),
+                    operationType,
+                    (String) payload.get("value"),
+                    UUID.fromString((String) payload.get("parentId")),
+                    UUID.fromString((String) payload.get("itemId"))
+            );
+        } catch (Exception e) {
+            System.err.println("Error extracting operation: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private void sendErrorResponse(String destination, String errorMessage) {
+        messagingTemplate.convertAndSend(destination, Map.of("success", false, "errorMessage", errorMessage));
+    }
+
+    private void sendUserListUpdate(String documentId) {
+        messagingTemplate.convertAndSend("/topic/document/" + documentId + "/users", manager.getDocumentUsers(documentId).stream()
+                .map(user -> Map.of(
+                "username", user.getUsername(),
+                "isEditor", user.isEditor()
+        ))
+                .collect(Collectors.toList()));
+    }
+
 }
