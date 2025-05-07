@@ -39,27 +39,55 @@ public class CRDTOperation {
         return uuid;
     }
 
+    public void setId(UUID uuid) {
+        this.uuid = uuid;
+    }
+
     public long getTimestamp() {
         return timestamp;
+    }
+
+    public void setTimestamp(long timestamp) {
+        this.timestamp = timestamp;
     }
 
     public String getUserId() {
         return userId;
     }
 
+    public void setUserId(String userId) {
+        this.userId = userId;
+    }
+
     public UUID getParentId() {
         return parentId;
+    }
+
+    public void setParentId(UUID parentId) {
+        this.parentId = parentId;
     }
 
     public UUID getItemId() {
         return itemId;
     }
 
+    public void setItemId(UUID itemId) {
+        this.itemId = itemId;
+    }
+
     public String getValue() {
         return value;
     }
 
+    public void setValue(String value) {
+        this.value = value;
+    }
+
     public OperationType getOperation() {
         return operation;
+    }
+
+    public void setOperation(OperationType operation) {
+        this.operation = operation;
     }
 }

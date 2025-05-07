@@ -19,9 +19,13 @@ public class CRDTController {
     private boolean isUndoing = false;
     private boolean isRedoing = false;
     private boolean isRemoteOperation = false;
+    private boolean isImporting = false;
+    private boolean newDocument = false;
     private ClientSocket clientSocket;
     private String userId;
     private ArrayList<CRDTOperation> operations = new ArrayList<>();
+    private ArrayList<CRDTOperation> pendingOperations = new ArrayList<>();
+    private ArrayList<CRDTOperation> buffOperations = new ArrayList<>();
 
     public CRDTController(ClientSocket clientSocket, String userId) {
         this.clientSocket = clientSocket;
@@ -33,26 +37,23 @@ public class CRDTController {
     public CRDTController() {
         this.crdt = new CRDT();
         this.items.add(crdt.getRoot());
+        this.pendingOperations = new ArrayList<>();
     }
 
-    public void sendOperationsToServer() {
-        for (CRDTOperation operation : operations) {
-            clientSocket.sendOperation(operation);
-        }
+    public String getUserId() {
+        return userId;
     }
 
-    public void startNewDocument(List<CRDTOperation> operations) {
+    public void openNewDocument() {
         this.operations.clear();
         this.undoStack.clear();
         this.redoStack.clear();
         this.items.clear();
         this.crdt = new CRDT();
         this.items.add(crdt.getRoot());
-        for (CRDTOperation operation : operations) {
-            crdt.newOperation(operation);
-        }
         _updateItemsList();
         currentText = renderText();
+        newDocument = true;
     }
 
     synchronized public void undo() {
@@ -134,12 +135,26 @@ public class CRDTController {
         }
     }
 
+    synchronized public void setImportedText(String newText) {
+        newDocument = false;
+        textChanged("", currentText.length());
+        textChanged(newText, 0);
+        isImporting = true;
+    }
+
     synchronized public void textChanged(String newText, int index) {
+        if (newDocument && newText.isEmpty()) {
+            System.out.println("New document opened, ignoring text change.");
+            newDocument = false;
+            return;
+        }
+
         System.out.println("Text changed: " + newText + " at index: " + index);
-        if (isUndoing || isRedoing || isRemoteOperation) {
+        if (isUndoing || isRedoing || isRemoteOperation || isImporting) {
             isRemoteOperation = false;
             isUndoing = false;
             isRedoing = false;
+            isImporting = false;
             return;
         }
 
@@ -152,22 +167,59 @@ public class CRDTController {
                 _deleteText(newText, index - i);
             }
         }
+
         currentText = newText;
         redoStack.clear();
+        sendOperations();
 
         System.out.println("Rendered text: " + renderText());
         System.out.println("************************");
     }
 
-    synchronized public void onRemoteOperation(CRDTOperation operation) {
+    synchronized public void onRemoteOperation(CRDTOperation newOperation) {
+        newDocument = false;
+
+        for (CRDTOperation operation : operations) {
+            if (operation.getId().equals(newOperation.getId())) {
+                System.out.println("Duplicate operation detected: " + newOperation.getId());
+                return;
+            }
+        }
+
         isRemoteOperation = true;
 
-        crdt.newOperation(operation);
+        try {
+            crdt.newOperation(newOperation);
+            operations.add(newOperation);
+        } catch (NullPointerException e) {
+            System.out.println("Error applying remote operation: " + e.getMessage());
+            pendingOperations.add(newOperation);
+        }
+
+        while (true) {
+            boolean updated = false;
+            for (CRDTOperation operation : new ArrayList<>(pendingOperations)) {
+                try {
+                    crdt.newOperation(operation);
+                } catch (NullPointerException e) {
+                    System.out.println("Error applying remote operation: " + e.getMessage());
+                    continue;
+                }
+                pendingOperations.remove(operation);
+                operations.add(operation);
+                updated = true;
+            }
+
+            if (!updated) {
+                break;
+            }
+        }
 
         _updateItemsList();
-        currentText = renderText();
+        currentText =
 
-        operations.add(operation);
+                renderText();
+
     }
 
     public String renderText() {
@@ -200,7 +252,7 @@ public class CRDTController {
         items.add(index + 1, crdt.findCrItem(operation.getItemId()));
         undoStack.add(operation);
         operations.add(operation);
-        clientSocket.sendOperation(operation);
+        buffOperations.add(operation);
     }
 
     private void _deleteText(String newText, int index) {
@@ -215,7 +267,21 @@ public class CRDTController {
         items.remove(index);
         undoStack.add(operation);
         operations.add(operation);
-        clientSocket.sendOperation(operation);
+        buffOperations.add(operation);
+    }
+
+    private void sendOperations() {
+        while (!buffOperations.isEmpty()) {
+            ArrayList<CRDTOperation> operationsToSend = new ArrayList<>();
+            for (int i = 0; i < 5; i++) {
+                if (buffOperations.isEmpty()) {
+                    break;
+                }
+                CRDTOperation operation = buffOperations.remove(0);
+                operationsToSend.add(operation);
+            }
+            clientSocket.sendOperations(operationsToSend);
+        }
     }
 
     private void _updateItemsList() {

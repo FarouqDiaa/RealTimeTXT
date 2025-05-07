@@ -1,8 +1,11 @@
 package com.realtimetxt.server;
 
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -13,43 +16,22 @@ import org.springframework.stereotype.Component;
 @Component
 public class SessionManager {
 
-    /**
-     * Maps a unique code to a document ID. This is used to associate a session
-     * code with the corresponding document.
-     */
-    private Map<String, String> codeOfDocument = new ConcurrentHashMap<>();
+    // Maps session codes to document IDs and roles
+    private final Map<String, String> codeOfDocument = new ConcurrentHashMap<>();
+    private final Map<String, String> codeOfRole = new ConcurrentHashMap<>();
 
-    /**
-     * Maps a unique code to a role (e.g., "editor" or "viewer"). This is used
-     * to determine the role associated with a session code.
-     */
-    private Map<String, String> codeOfRole = new ConcurrentHashMap<>();
-
-    /**
-     * Maps a document ID to a set of user IDs. This is used to track which
-     * users are currently in a session for a specific document.
-     */
-    private Map<String, Set<String>> documentsUsers = new ConcurrentHashMap<>();
-
-    /**
-     * Maps a user ID to a set of document IDs. This is used to track which
-     * documents a user is currently participating in.
-     */
-    private Map<String, Set<String>> usersDocuments = new ConcurrentHashMap<>();
-
-    /**
-     * Maps a user ID to a map of document IDs and their corresponding roles.
-     * This is used to track the role of a user for each document they are
-     * participating in.
-     */
-    private Map<String, Map<String, String>> usersRoles = new ConcurrentHashMap<>();
-    // Add to SessionManager.java
+    // Tracks user presence in documents
     private final Map<String, Set<UserPresence>> documentUsers = new ConcurrentHashMap<>();
 
+    // Tracks which documents a user is part of and their roles
+    private final Map<String, Set<String>> usersDocuments = new ConcurrentHashMap<>();
+    private final Map<String, Map<String, String>> usersRoles = new ConcurrentHashMap<>();
+
     public static class UserPresence {
-        private String userId;
-        private String username;
-        private boolean isEditor;
+
+        private final String userId;
+        private final String username;
+        private final boolean isEditor;
         private long lastActive;
 
         public UserPresence(String userId, String username, boolean isEditor, long lastActive) {
@@ -58,87 +40,126 @@ public class SessionManager {
             this.isEditor = isEditor;
             this.lastActive = lastActive;
         }
-        
+
         public String getUserId() {
             return userId;
         }
-        
+
         public String getUsername() {
             return username;
         }
-        
+
         public boolean isEditor() {
             return isEditor;
         }
-        
+
         public long getLastActive() {
             return lastActive;
         }
-        
+
         public void setLastActive(long lastActive) {
             this.lastActive = lastActive;
         }
-    }   
-    public void addUserToDocument(String documentId, String userId, String username, boolean isEditor) {
-        Set<UserPresence> users = documentUsers.computeIfAbsent(documentId, k -> new ConcurrentSkipListSet<>((u1, u2) -> u1.getUserId().compareTo(u2.getUserId())));
-        users.add(new UserPresence(userId, username, isEditor, System.currentTimeMillis()));
-    }
-    public void removeUserFromDocument(String documentId, String userId) {
-        Set<UserPresence> users = documentUsers.get(documentId);
-        if (users != null) {
-            users.removeIf(user -> user.getUserId().equals(userId));
-            if (users.isEmpty()) {
-                documentUsers.remove(documentId);
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
             }
+            if (!(o instanceof UserPresence)) {
+                return false;
+            }
+            UserPresence that = (UserPresence) o;
+            return userId.equals(that.userId);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(userId);
         }
     }
-    public Set<UserPresence> getDocumentUsers(String documentId) {
-        return documentUsers.getOrDefault(documentId, Collections.emptySet());
-    }
- 
 
-   
-  
+    public void addUserToDocument(String documentId, String userId, String username, boolean isEditor) {
+        Set<UserPresence> users = documentUsers.computeIfAbsent(
+                documentId,
+                k -> new ConcurrentSkipListSet<>(Comparator.comparing(UserPresence::getUserId))
+        );
 
-    public Map<String, String> createSession(String documentId) {
-        String editorCode = generateUniqueCode();
-        String viewerCode = generateUniqueCode();
+        // First remove any existing entry for the userId
+        users.removeIf(user -> user.getUserId().equals(userId));
 
-        codeOfDocument.put(editorCode, documentId);
-        codeOfRole.put(editorCode, "editor");
+        // Ensure unique display names by appending a number if needed
+        String uniqueUsername = ensureUniqueUsername(users, username, userId);
 
-        codeOfDocument.put(viewerCode, documentId);
-        codeOfRole.put(viewerCode, "viewer");
+        // Add new user presence
+        users.add(new UserPresence(userId, uniqueUsername, isEditor, System.currentTimeMillis()));
 
-        Map<String, String> codes = new HashMap<>();
-        codes.put("editor", editorCode);
-        codes.put("viewer", viewerCode);
-        return codes;
+        usersDocuments.computeIfAbsent(userId, k -> new ConcurrentSkipListSet<>()).add(documentId);
+        usersRoles.computeIfAbsent(userId, k -> new ConcurrentHashMap<>()).put(documentId, isEditor ? "editor" : "viewer");
     }
 
-    public boolean joinSession(String userId, String code) {
-        if (!codeOfDocument.containsKey(code)) {
+    private String ensureUniqueUsername(Set<UserPresence> users, String baseUsername, String userId) {
+        String uniqueName = baseUsername;
+        int counter = 2;
+
+        boolean isDuplicate = true;
+        while (isDuplicate) {
+            final String currentName = uniqueName;
+            isDuplicate = users.stream().anyMatch(u -> u.getUsername().equals(currentName) && !u.getUserId().equals(userId));
+            if (isDuplicate) {
+                uniqueName = baseUsername + " (" + counter + ")";
+                counter++;
+            }
+        }
+
+        return uniqueName;
+    }
+
+    public boolean validateRoleAssignment(String code, String documentId, boolean requestedEditor) {
+        String role = codeOfRole.get(code);
+        if (role == null) {
             return false;
         }
 
-        String docId = codeOfDocument.get(code);
-        String role = codeOfRole.get(code);
+        // If requesting editor role, code must be editor code
+        if (requestedEditor && !"editor".equals(role)) {
+            return false;
+        }
 
-        documentsUsers.computeIfAbsent(docId, k -> new ConcurrentSkipListSet<>()).add(userId);
-        usersDocuments.computeIfAbsent(userId, k -> new ConcurrentSkipListSet<>()).add(docId);
-
-        usersRoles.computeIfAbsent(userId, k -> new ConcurrentHashMap<>()).put(docId, role);
-
-        return true;
+        // Document ID must match
+        return documentId.equals(codeOfDocument.get(code));
     }
 
-    public void leaveSession(String userId, String documentId) {
-        Set<String> users = documentsUsers.get(documentId);
+    public void refreshUserPresence(String documentId, String userId) {
+        Set<UserPresence> users = documentUsers.get(documentId);
         if (users != null) {
-            users.remove(userId);
+            for (UserPresence user : users) {
+                if (user.getUserId().equals(userId)) {
+                    user.setLastActive(System.currentTimeMillis());
+                    break;
+                }
+            }
+        }
+    }
+
+    public void removeUserFromDocument(String documentId, String userId) {
+        Set<UserPresence> users = documentUsers.get(documentId);
+        if (users != null) {
+            // Find the username before removing
+            String username = users.stream()
+                    .filter(user -> user.getUserId().equals(userId))
+                    .map(UserPresence::getUsername)
+                    .findFirst()
+                    .orElse("Unknown");
+
+            // Remove the user
+            users.removeIf(user -> user.getUserId().equals(userId));
+
             if (users.isEmpty()) {
-                documentsUsers.remove(documentId);
-                System.out.println("Session for document " + documentId + " removed as it is empty");
+                documentUsers.remove(documentId);
+                System.out.println("All users left document " + documentId + " (access codes still valid)");
+            } else {
+                System.out.println("User " + username + " (" + userId + ") removed from document " + documentId);
             }
         }
 
@@ -159,6 +180,57 @@ public class SessionManager {
         }
     }
 
+    /**
+     * Handle user disconnect by removing them from all documents they were part
+     * of
+     *
+     * @param userId The ID of the disconnected user
+     */
+    public void handleUserDisconnect(String userId) {
+        Set<String> documents = getUserDocuments(userId);
+        if (documents != null && !documents.isEmpty()) {
+            // Create a copy to avoid ConcurrentModificationException
+            Set<String> docsCopy = new HashSet<>(documents);
+            for (String docId : docsCopy) {
+                removeUserFromDocument(docId, userId);
+                System.out.println("User " + userId + " removed from document " + docId + " due to disconnect");
+            }
+        }
+    }
+
+    public Set<UserPresence> getDocumentUsers(String documentId) {
+        return documentUsers.getOrDefault(documentId, Collections.emptySet());
+    }
+
+    public Map<String, String> createSession(String documentId) {
+        String editorCode = generateUniqueCode();
+        String viewerCode = generateUniqueCode();
+
+        codeOfDocument.put(editorCode, documentId);
+        codeOfRole.put(editorCode, "editor");
+
+        codeOfDocument.put(viewerCode, documentId);
+        codeOfRole.put(viewerCode, "viewer");
+
+        Map<String, String> codes = new HashMap<>();
+        codes.put("editor", editorCode);
+        codes.put("viewer", viewerCode);
+        return codes;
+    }
+
+    public boolean joinSession(String userId, String code, String username) {
+        if (!codeOfDocument.containsKey(code)) {
+            return false;
+        }
+
+        String documentId = codeOfDocument.get(code);
+        String role = codeOfRole.get(code);
+        boolean isEditor = "editor".equals(role);
+
+        addUserToDocument(documentId, userId, username, isEditor);
+        return true;
+    }
+
     public String getUserRole(String userId, String documentId) {
         Map<String, String> roles = usersRoles.get(userId);
         return roles != null ? roles.get(documentId) : null;
@@ -168,16 +240,9 @@ public class SessionManager {
         return usersDocuments.getOrDefault(userId, Collections.emptySet());
     }
 
-    public Set<String> getUsersInDocument(String documentId) {
-        return documentsUsers.getOrDefault(documentId, Collections.emptySet());
-    }
-
-    private String generateUniqueCode() {
-        String code;
-        do {
-            code = UUID.randomUUID().toString().substring(0, 8);
-        } while (codeOfDocument.containsKey(code));
-        return code;
+    public boolean isUserInDocument(String userId, String documentId, String role) {
+        Map<String, String> roles = usersRoles.get(userId);
+        return roles != null && role.equals(roles.get(documentId));
     }
 
     public boolean isValidDocument(String code) {
@@ -185,7 +250,8 @@ public class SessionManager {
     }
 
     public boolean isEditorOrViewerCode(String code) {
-        return codeOfDocument.containsKey(code) && (codeOfRole.get(code).equals("editor") || codeOfRole.get(code).equals("viewer"));
+        String role = codeOfRole.get(code);
+        return codeOfDocument.containsKey(code) && ("editor".equals(role) || "viewer".equals(role));
     }
 
     public String getCodeRole(String code) {
@@ -200,8 +266,11 @@ public class SessionManager {
         return "editor".equals(codeOfRole.get(code)) && documentId.equals(codeOfDocument.get(code));
     }
 
-    public boolean isUserInDocument(String userId, String documentId, String role) {
-        Map<String, String> roles = usersRoles.get(userId);
-        return roles != null && role.equals(roles.get(documentId));
+    private String generateUniqueCode() {
+        String code;
+        do {
+            code = UUID.randomUUID().toString().substring(0, 8);
+        } while (codeOfDocument.containsKey(code));
+        return code;
     }
 }

@@ -2,196 +2,252 @@ package com.realtimetxt.client.ui;
 
 import javafx.application.Platform;
 import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.*;
-import javafx.scene.paint.Color;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 
 import java.io.*;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
+import java.nio.file.Files;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 import com.realtimetxt.client.logic.CRDTController;
 import com.realtimetxt.client.network.ClientSocket;
-import com.realtimetxt.server.SessionManager;
 import com.realtimetxt.shared.CRDTOperation;
 
 public class EditorUI {
-    private Stage primaryStage;
+
+    private final Stage primaryStage;
     private TextArea textArea;
     private VBox userListBox;
     private Label viewerCodeLabel;
     private Label editorCodeLabel;
+    private Label statusLabel;
+    private Label userCountLabel;
 
     private String viewerCode = "";
     private String editorCode = "";
-    private String currentUser = "";
-
+    private String currentUser = "Anonymous";
     private boolean isViewer = false;
-    private Label messageLabel;
+    private String currentDocumentId = "";
 
     private CRDTController crdtController;
-    private ClientSocket clientSocket; // Client socket for network communication
-
+    private ClientSocket clientSocket;
     private final Map<String, UserCaret> remoteCursors = new ConcurrentHashMap<>();
 
-    // ...existing code...
     public EditorUI(Stage stage) {
         this.primaryStage = stage;
+        initializeComponents();
+        showUserLoginDialog();
+    }
 
-        // Prompt user for their name
-        TextInputDialog dialog = new TextInputDialog("Anonymous Frog");
+    private void initializeComponents() {
+        this.textArea = new TextArea();
+        this.textArea.setStyle("-fx-font-family: 'Consolas', monospace; -fx-font-size: 14px;");
+        this.textArea.setEditable(false);
+
+        this.statusLabel = new Label("Please create or join a document");
+        this.statusLabel.setStyle("-fx-text-fill: #555; -fx-font-size: 14px;");
+
+        this.viewerCodeLabel = new Label("Not available");
+        this.editorCodeLabel = new Label("Not available");
+        this.userCountLabel = new Label("ACTIVE USERS (0)");
+        this.userListBox = new VBox(5);
+    }
+
+    private void showUserLoginDialog() {
+        TextInputDialog dialog = new TextInputDialog("Anonymous");
         dialog.setTitle("Enter Your Name");
         dialog.setHeaderText("Welcome to RealTimeTXT");
         dialog.setContentText("Please enter your name:");
 
         dialog.showAndWait().ifPresent(name -> {
             currentUser = name;
-            String authenticatedUserId = UUID.randomUUID().toString(); // Generate a random ID for this user
-            this.clientSocket = new ClientSocket(name, authenticatedUserId, new ClientSocket.TextEditorCallback() {
-                @Override
-                public void onUserPresenceUpdate(Set<String> presenceUpdate) {
-                    // This crucial method handles user presence updates
-                    Platform.runLater(() -> {
-                        showNotification("User presence updated: " + presenceUpdate);
-
-                        // Clear existing user list UI
-                        userListBox.getChildren().clear();
-
-                        // Get the current set of remote cursors
-                        Set<String> existingUsers = new HashSet<>(remoteCursors.keySet());
-
-                        // Process each user from the presence update
-                        for (String username : presenceUpdate) {
-                            // Skip current user in the remote cursors list
-                            System.out.println(
-                                    "Current user: " + currentUser + ", Username: " + username + "+++++++++++++++++++");
-
-                            if (!username.equals(currentUser)) {
-                                // If user isn't already in our map, add them with a default position
-                                if (!remoteCursors.containsKey(username)) {
-                                    remoteCursors.put(username, new UserCaret(0));
-                                }
-                                // Remove from existing users (so we know which ones to keep)
-                                existingUsers.remove(username);
-                            }
-                        }
-
-                        // Remove any users no longer in the presence update
-                        for (String username : existingUsers) {
-                            remoteCursors.remove(username);
-                        }
-
-                        // Update the user list UI
-                        updateUserList();
-                    });
-                }
-
-                @Override
-                public void onDocumentCreated(String documentId, String editorCode, String viewerCode) {
-                    Platform.runLater(() -> {
-                        showNotification("Document created with ID: " + documentId);
-                        setEditorCode(editorCode);
-                        setViewerCode(viewerCode);
-                        showNotification("New document created with ID: " + documentId);
-                    });
-                }
-
-                @Override
-                public void onDocumentJoined(String documentId, boolean isEditor, List<CRDTOperation> operations) {
-                    Platform.runLater(() -> {
-                        showNotification("Joined document: " + documentId);
-                        isViewer = !isEditor;
-
-                        crdtController.startNewDocument(operations);
-                        updateText(crdtController.renderText(), isEditor);
-
-                        // Disable editing if the user is a viewer
-                        textArea.setEditable(!isViewer);
-                        messageLabel.setText(isViewer ? "You are a viewer. Editing is disabled." : "");
-
-                        // add new user to the user list
-                        // remoteCursors.put(currentUser, new UserCaret(0));
-                        // updateUserList();
-                    });
-                }
-
-                @Override
-                public void onRemoteOperation(CRDTOperation operation) {
-                    Platform.runLater(() -> {
-                        showNotification("Remote operation received");
-                        // TODO: Apply the CRDT operation to the local document
-                        crdtController.onRemoteOperation(operation);
-                        updateText(crdtController.renderText(), true);
-                    });
-                }
-
-                @Override
-                public void onReconnected() {
-                    Platform.runLater(() -> {
-                        showNotification("Reconnected to the server");
-                    });
-                }
-
-                @Override
-                public void onDisconnected(String reason) {
-                    Platform.runLater(() -> {
-                        showAlert("Disconnected: " + reason);
-                    });
-                }
-
-                @Override
-                public void onError(String error) {
-                    Platform.runLater(() -> {
-                        showAlert(error);
-                    });
-                }
-            });
-            this.crdtController = new CRDTController(clientSocket, authenticatedUserId);
+            initializeNetworkComponents(UUID.randomUUID().toString());
+            setupMainUI();
+            primaryStage.setTitle("RealTimeTXT - " + currentUser);
         });
-        initUI();
     }
 
-    private void initUI() {
-        primaryStage.setTitle("Realtime Text Editor");
+    private void initializeNetworkComponents(String userId) {
+        this.clientSocket = new ClientSocket(currentUser, userId, new ClientSocket.TextEditorCallback() {
+            @Override
+            public void onDocumentCreated(String docId, String eCode, String vCode) {
+                Platform.runLater(() -> _handleDocumentCreated(docId, eCode, vCode));
+            }
 
+            @Override
+            public void onDocumentJoined(String docId, boolean isEditor) {
+                Platform.runLater(() -> {
+                    // Ensure we process operations before updating UI
+                    _handleDocumentJoined(docId, isEditor);
+                });
+            }
+
+            @Override
+            public void onUserPresenceUpdate(Set<String> presenceUpdate) {
+                Platform.runLater(() -> _updateUserPresence(presenceUpdate));
+            }
+
+            @Override
+            public void onCursorPositionUpdate(String username, int position) {
+                Platform.runLater(() -> {
+                    if (!username.equals(currentUser)) {
+                        remoteCursors.put(username, new UserCaret(position));
+                        _updateUserList();
+                    }
+                });
+            }
+
+            @Override
+            public void onRemoteOperation(CRDTOperation operation) {
+                Platform.runLater(() -> _handleRemoteOperation(operation));
+            }
+
+            @Override
+            public void onRemoteBulkOperation(List<CRDTOperation> operations) {
+                // Platform.runLater(() -> _handleRemoteBulkOperation(operations));
+            }
+
+            @Override
+            public void onReconnected() {
+                Platform.runLater(() -> {
+                    statusLabel.setText("Reconnected to server");
+                    if (currentDocumentId != null && !currentDocumentId.isEmpty()) {
+                        // Resubscribe to document events
+                        clientSocket.subscribeToDocument(currentDocumentId);
+                    }
+                });
+            }
+
+            @Override
+            public void onDisconnected(String reason) {
+                Platform.runLater(() -> showAlert("Disconnected: " + reason));
+            }
+
+            @Override
+            public void onError(String error) {
+                Platform.runLater(() -> showAlert(error));
+            }
+        });
+
+        this.crdtController = new CRDTController(clientSocket, userId);
+    }
+
+    private void _handleDocumentCreated(String docId, String eCode, String vCode) {
+        currentDocumentId = docId;
+        editorCode = eCode;
+        viewerCode = vCode;
+        editorCodeLabel.setText(eCode);
+        viewerCodeLabel.setText(vCode);
+        statusLabel.setText("Document created - Editor mode");
+        textArea.setEditable(true);
+        isViewer = false;
+        textArea.setStyle("");
+        crdtController.openNewDocument();
+        if (!textArea.getText().isEmpty()) {
+            _updateText("", false);
+        }
+    }
+
+    private void _handleDocumentJoined(String docId, boolean isEditor) {
+        currentDocumentId = docId;
+        isViewer = !isEditor;
+
+        // Update editor status first
+        textArea.setEditable(isEditor);
+
+        if (isEditor) {
+            statusLabel.setText("Joined as editor - Editing enabled");
+            textArea.setStyle("");
+        } else {
+            statusLabel.setText("Joined as viewer - View only");
+            textArea.setStyle("-fx-control-inner-background: #f5f5f5;");
+        }
+
+        // Clear current state before applying operations
+        crdtController.openNewDocument();
+        _updateText("", false);
+
+        // Apply operations immediately if we have them
+        Platform.runLater(() -> {
+            try {
+                // Send our cursor position after text is updated
+                clientSocket.sendCursorPosition(0);
+
+                // Request user presence information explicitly
+                clientSocket.requestUserPresence(docId);
+            } catch (Exception e) {
+                System.err.println("Error applying operations: " + e.getMessage());
+                e.printStackTrace();
+            }
+        });
+
+        // Set up the window close handler to properly leave the document
+        primaryStage.setOnCloseRequest(event -> {
+            if (clientSocket != null && clientSocket.isConnected() && currentDocumentId != null
+                    && !currentDocumentId.isEmpty()) {
+                // Send leave document message to server before closing
+                clientSocket.leaveDocument(currentDocumentId);
+                clientSocket.disconnect();
+                System.out.println("Document left and connection closed");
+            }
+        });
+    }
+
+    private void _handleRemoteOperation(CRDTOperation operation) {
+        int currentPos = textArea.getCaretPosition();
+        crdtController.onRemoteOperation(operation);
+        // Update text and ensure cursor positions are maintained
+        Platform.runLater(() -> {
+            String newText = crdtController.renderText();
+            textArea.setText(newText);
+
+            // Try to maintain cursor position within bounds
+            if (currentPos <= textArea.getLength()) {
+                textArea.positionCaret(currentPos);
+            } else {
+                textArea.positionCaret(textArea.getLength());
+            }
+
+            // Send our cursor position to keep other users informed
+            // Added delay to ensure UI updates before sending cursor
+            new java.util.Timer().schedule(
+                    new java.util.TimerTask() {
+                        @Override
+                        public void run() {
+                            Platform.runLater(() -> {
+                                clientSocket.sendCursorPosition(textArea.getCaretPosition());
+                                // Force update of user list to reflect new line numbers
+                                _updateUserList();
+                            });
+                        }
+                    },
+                    100 // 100ms delay
+            );
+        });
+    }
+
+    /*
+     * * Setup the main UI components and layout
+     */
+    private void setupMainUI() {
         BorderPane root = new BorderPane();
         root.setTop(createMenuBar());
         root.setCenter(createEditorArea());
         root.setLeft(createSidebar());
 
-        Scene scene = new Scene(root, 800, 600);
+        Scene scene = new Scene(root, 900, 650);
         primaryStage.setScene(scene);
-    }
 
-    // ──────────────────────────────── Menu Bar (Collaboration & File)
-    // ────────────────────────────────
-    private String fetchViewerCodeFromServer() {
-        if (clientSocket == null || !clientSocket.connect()) {
-            showAlert("Failed to connect to server");
-            return "";
-        }
-
-        clientSocket.createNewDocument();
-        // The codes will be set via the callback in onDocumentCreated
-        // viewerCode = "t3bt";
-        return viewerCode;
-    }
-
-    private String fetchEditorCodeFromServer() {
-        // Simulate fetching editor code from the server
-        // TODO : Implement actual server call to fetch editor code
-        // For now, iam return a hardcoded value
-        // editorCode = "t3bt2";// this is a placeholder
-        return editorCode;
+        // Window close handler is now moved to handleDocumentJoined
+        // for a more appropriate timing after document joining
+        primaryStage.show();
     }
 
     private MenuBar createMenuBar() {
@@ -207,212 +263,337 @@ public class EditorUI {
 
         // Edit Menu
         Menu editMenu = new Menu("Edit");
-        MenuItem undoItem = new MenuItem("Undo");
-        MenuItem redoItem = new MenuItem("Redo");
-
-        // Add TODO comments for Undo and Redo logic
-        undoItem.setOnAction(e -> {
-            crdtController.undo();
-            updateText(crdtController.renderText(), true);
-            showNotification("Undo action triggered.");
-        });
-
-        redoItem.setOnAction(e -> {
-            crdtController.redo();
-            updateText(crdtController.renderText(), true);
-            showNotification("Redo action triggered.");
-        });
-
+        MenuItem undoItem = new MenuItem("Undo (Ctrl+Z)");
+        MenuItem redoItem = new MenuItem("Redo (Ctrl+Y)");
+        undoItem.setOnAction(e -> _performUndo());
+        redoItem.setOnAction(e -> _performRedo());
         editMenu.getItems().addAll(undoItem, redoItem);
 
         // Collaboration Menu
         Menu collabMenu = new Menu("Collaboration");
-        MenuItem requestCodesItem = new MenuItem("Request Session Codes");
-        MenuItem joinCollabItem = new MenuItem("Join Collaboration");
-
-        requestCodesItem.setOnAction(e -> {
-            // Simulate fetching session codes from the server
-            String fetchedViewerCode = fetchViewerCodeFromServer();
-            String fetchedEditorCode = fetchEditorCodeFromServer();
-            setViewerCode(fetchedViewerCode);
-            setEditorCode(fetchedEditorCode);
-
-            // Enable editing and remove the message
-            textArea.setEditable(true);
-            messageLabel.setText(""); // Clear the message
-            showNotification("Session codes updated! Editing is now enabled.");
-        });
-
-        joinCollabItem.setOnAction(e -> showJoinSessionDialog());
-
-        collabMenu.getItems().addAll(requestCodesItem, joinCollabItem);
+        MenuItem newDocItem = new MenuItem("New Document");
+        MenuItem joinDocItem = new MenuItem("Join Document");
+        newDocItem.setOnAction(e -> _createNewDocument());
+        joinDocItem.setOnAction(e -> _showJoinDialog());
+        collabMenu.getItems().addAll(newDocItem, joinDocItem);
 
         menuBar.getMenus().addAll(fileMenu, editMenu, collabMenu);
-
         return menuBar;
     }
 
-    private void showJoinSessionDialog() {
-        TextInputDialog dialog = new TextInputDialog();
-        dialog.setTitle("Join Collaboration");
-        dialog.setHeaderText("Enter the session code:");
-        dialog.setContentText("Session Code:");
-
-        dialog.showAndWait().ifPresent(code -> {
-            if (clientSocket != null) {
-                // Connect if not already connected
-                if (!clientSocket.isConnected()) {
-                    clientSocket.connect();
-                }
-                // Attempt to join the document with the entered code
-                clientSocket.joinDocument(code);
-
-                // If join is successful, remove the message label
-                Platform.runLater(() -> {
-                    messageLabel.setText(""); // Clear the message
-                    textArea.setEditable(true); // Enable editing
-                    showNotification("Successfully joined session with code: " + code);
-                });
-            } else {
-                showAlert("Client socket not initialized");
-            }
-        });
-    }
-
-    // ──────────────────────────────── Editor Area ────────────────────────────────
     private StackPane createEditorArea() {
         StackPane editorPane = new StackPane();
-        textArea = new TextArea();
-        textArea.setStyle("-fx-font-family: monospace; -fx-font-size: 14px;");
-        textArea.setEditable(false); // Initially set to non-editable
-
-        // Add a message label
-        messageLabel = new Label("Editing is disabled. Please request a session code to start editing.");
-        messageLabel.setStyle("-fx-text-fill: red; -fx-font-size: 14px;");
-
-        VBox editorContainer = new VBox(10, messageLabel, textArea);
+        VBox editorContainer = new VBox(5, statusLabel, textArea);
         editorContainer.setPadding(new Insets(10));
         editorPane.getChildren().add(editorContainer);
 
-        textArea.textProperty().addListener((observable, oldValue, newValue) -> {
-            // Update the CRDT with the new text
-            crdtController.textChanged(newValue, textArea.getCaretPosition());
+        // Text change listener
+        textArea.textProperty().addListener((obs, oldVal, newVal) -> {
+            if (!isViewer && clientSocket != null && clientSocket.isConnected()) {
+                crdtController.textChanged(newVal, textArea.getCaretPosition());
+            }
         });
 
-        textArea.caretPositionProperty().addListener((observable, oldValue, newValue) -> {
-            // Update the remote cursor position
-            if (clientSocket != null && clientSocket.isConnected()) {
-                
-            }
-            // Update the local cursor position
-            remoteCursors.put(currentUser, new UserCaret(newValue.intValue()));
-            updateRemoteCursors();
+        // Cursor position listener
+        textArea.caretPositionProperty().addListener((obs, oldPos, newPos) -> {
+            if (clientSocket != null && clientSocket.isConnected() && currentDocumentId != null) {
+                int position = textArea.getCaretPosition();
+                remoteCursors.put(currentUser, new UserCaret(position));
+                clientSocket.sendCursorPosition(position);
 
+                // Debug cursor position
+                System.out.println("Sending cursor position: " + position + " for " + currentUser);
+
+                // Update UI to reflect current positions
+                _updateUserList();
+            }
         });
 
         return editorPane;
     }
 
-    // ──────────────────────────────── Sidebar ────────────────────────────────
     private VBox createSidebar() {
-        VBox sidebar = new VBox(20);
+        VBox sidebar = new VBox(15);
         sidebar.setPadding(new Insets(15));
-        sidebar.setPrefWidth(220);
-        sidebar.setStyle("-fx-background-color: #f8f8f8;");
+        sidebar.setPrefWidth(250);
+        sidebar.setStyle("-fx-background-color: #f5f5f5;");
 
-        // Viewer Code Section
-        Label viewerHeader = createHeaderLabel("Viewer Code");
-        viewerCodeLabel = createCodeLabel(viewerCode);
-        Button copyViewerButton = new Button("Copy");
-        copyViewerButton.setOnAction(e -> copyToClipboard(viewerCode));
-        HBox viewerBox = new HBox(10, viewerCodeLabel, copyViewerButton);
+        // Document Status
+        VBox statusBox = new VBox(5);
+        Label statusHeader = new Label("DOCUMENT STATUS");
+        statusHeader.setStyle("-fx-font-weight: bold; -fx-font-size: 14px;");
+        statusBox.getChildren().addAll(statusHeader, statusLabel);
 
-        // Editor Code Section
-        Label editorHeader = createHeaderLabel("Editor Code");
-        editorCodeLabel = createCodeLabel(editorCode);
-        Button copyEditorButton = new Button("Copy");
-        copyEditorButton.setOnAction(e -> copyToClipboard(editorCode));
-        HBox editorBox = new HBox(10, editorCodeLabel, copyEditorButton);
+        // Sharing Codes
+        VBox codesBox = new VBox(10);
+        Label codesHeader = new Label("SHARING CODES");
+        codesHeader.setStyle("-fx-font-weight: bold; -fx-font-size: 14px;");
 
-        // Active Users Section
-        Label usersHeader = createHeaderLabel("Active Users");
-        userListBox = new VBox(5);
-        updateUserList();
+        HBox editorCodeBox = createCodeBox("Editor Code:", editorCodeLabel);
+        HBox viewerCodeBox = createCodeBox("Viewer Code:", viewerCodeLabel);
 
-        sidebar.getChildren().addAll(
-                viewerHeader, viewerBox,
-                editorHeader, editorBox,
-                usersHeader, userListBox);
+        codesBox.getChildren().addAll(codesHeader, editorCodeBox, viewerCodeBox);
 
+        // Active Users
+        VBox usersBox = new VBox(5);
+        userCountLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 14px;");
+        _updateUserList();
+        usersBox.getChildren().addAll(userCountLabel, userListBox);
+
+        sidebar.getChildren().addAll(statusBox, new Separator(), codesBox, new Separator(), usersBox);
         return sidebar;
     }
 
-    private Label createHeaderLabel(String text) {
-        Label label = new Label(text);
-        label.setStyle("-fx-font-weight: bold; -fx-font-size: 16px;");
-        return label;
+    private HBox createCodeBox(String labelText, Label codeLabel) {
+        Label label = new Label(labelText);
+        label.setStyle("-fx-font-weight: bold;");
+        codeLabel.setStyle("-fx-background-color: #eee; -fx-padding: 3 8;");
+
+        Button copyBtn = new Button("Copy");
+        copyBtn.setStyle("-fx-padding: 3 8;");
+        copyBtn.setOnAction(e -> copyToClipboard(codeLabel.getText()));
+
+        HBox box = new HBox(5, label, codeLabel, copyBtn);
+        box.setAlignment(Pos.CENTER_LEFT);
+        return box;
     }
 
-    private Label createCodeLabel(String text) {
-        Label label = new Label(text);
-        label.setStyle("-fx-background-color: #f0f0f0; -fx-padding: 5px 10px;");
-        return label;
-    }
+    /*
+     * * Update the user presence list and cursor positions
+     */
+    private void _updateUserPresence(Set<String> presenceUpdate) {
+        System.out.println("User presence update received with " + presenceUpdate.size() + " users: "
+                + String.join(", ", presenceUpdate));
 
-    // ──────────────────────────────── File Import/Export
-    // ────────────────────────────────
-    private void importFile() {
-        FileChooser fileChooser = new FileChooser();
-        fileChooser.setTitle("Import Document");
-        fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Text Files", "*.txt"));
-        File file = fileChooser.showOpenDialog(primaryStage);
+        // Always ensure current user is present in the list
+        Set<String> allUsers = new HashSet<>(presenceUpdate);
+        allUsers.add(currentUser);
 
-        if (file != null) {
-            try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
-                StringBuilder content = new StringBuilder();
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    content.append(line).append("\n");
-                }
-                textArea.setText(content.toString().trim());
-                showNotification("File imported successfully!");
-            } catch (IOException e) {
-                showAlert("Error reading file: " + e.getMessage());
+        // Update remote cursors map
+        for (String username : new HashSet<>(remoteCursors.keySet())) {
+            if (!allUsers.contains(username) && !username.equals(currentUser)) {
+                remoteCursors.remove(username);
             }
         }
 
+        // Add all users in the update with preservation of existing positions
+        for (String username : allUsers) {
+            // Keep existing cursor positions if available
+            if (!remoteCursors.containsKey(username)) {
+                remoteCursors.put(username, new UserCaret(0));
+            }
+        }
+
+        // Update the UI
+        _updateUserList();
+
+        // After user list update, send our current cursor position again
+        if (clientSocket != null && clientSocket.isConnected() && currentDocumentId != null) {
+            clientSocket.sendCursorPosition(textArea.getCaretPosition());
+        }
+    }
+
+    private void _updateUserList() {
+        userListBox.getChildren().clear();
+
+        // Create a distinct set of usernames
+        Set<String> distinctUsers = new HashSet<>(remoteCursors.keySet());
+
+        // Correct count is: all distinct users
+        int userCount = distinctUsers.size();
+        userCountLabel.setText("ACTIVE USERS (" + userCount + ")");
+
+        // Current user at the top with green checkmark
+        Label youLabel = new Label("✓ " + currentUser + " (you)");
+        youLabel.setStyle("-fx-text-fill: #2E7D32; -fx-font-weight: bold;");
+        userListBox.getChildren().add(youLabel);
+
+        // Other users with line positions
+        distinctUsers.stream()
+                .filter(username -> !username.equals(currentUser))
+                .sorted()
+                .forEach(username -> {
+                    UserCaret caret = remoteCursors.get(username);
+
+                    if (caret != null) {
+                        try {
+                            int position = caret.getPosition();
+                            // Get the current text to calculate line correctly
+                            String currentText = textArea.getText();
+                            int line = _calculateLineNumber(currentText, position);
+                            Label userLabel = new Label("• " + username + " (line " + line + ")");
+                            userLabel.setStyle("-fx-text-fill: #1565C0;");
+                            userListBox.getChildren().add(userLabel);
+
+                            // Debug line information
+                            System.out.println("User " + username + " at position " + position + " is on line " + line);
+                        } catch (Exception e) {
+                            Label userLabel = new Label("• " + username);
+                            userLabel.setStyle("-fx-text-fill: #1565C0;");
+                            userListBox.getChildren().add(userLabel);
+                            System.err.println("Error calculating line for " + username + ": " + e.getMessage());
+                        }
+                    } else {
+                        Label userLabel = new Label("• " + username);
+                        userLabel.setStyle("-fx-text-fill: #1565C0;");
+                        userListBox.getChildren().add(userLabel);
+                    }
+                });
+    }
+
+    private int _calculateLineNumber(String text, int position) {
+        if (text == null || text.isEmpty()) {
+            return 1;
+        }
+
+        // Ensure position is within bounds
+        position = Math.max(0, Math.min(position, text.length()));
+
+        // Count newlines before position
+        int line = 1;
+        for (int i = 0; i < position && i < text.length(); i++) {
+            if (text.charAt(i) == '\n') {
+                line++;
+            }
+        }
+
+        return line;
+    }
+
+    /*
+     * * Create a new document and set the editor code
+     */
+    private void _createNewDocument() {
+        if (clientSocket.connect()) {
+            clientSocket.createNewDocument();
+        } else {
+            showAlert("Failed to connect to server");
+        }
+    }
+
+    /*
+     * * Show a dialog to join an existing document with a code
+     */
+    private void _showJoinDialog() {
+        TextInputDialog dialog = new TextInputDialog();
+        dialog.setTitle("Join Document");
+        dialog.setHeaderText("Enter document code:");
+        dialog.showAndWait().ifPresent(code -> {
+            if (clientSocket.connect()) {
+                clientSocket.joinDocument(code);
+            }
+        });
+    }
+
+    /*
+     * * Perform undo and redo operations
+     */
+    private void _performUndo() {
+        if (!isViewer) {
+            crdtController.undo();
+            _updateText(crdtController.renderText(), true);
+        }
+    }
+
+    private void _performRedo() {
+        if (!isViewer) {
+            crdtController.redo();
+            _updateText(crdtController.renderText(), true);
+        }
+    }
+
+    /*
+     * * Update the text area with new content and preserve caret position
+     */
+    private void _updateText(String text, boolean preserveCaret) {
+        int caretPos = textArea.getCaretPosition();
+        textArea.setText(text);
+        if (preserveCaret) {
+            textArea.positionCaret(Math.min(caretPos, text.length()));
+        }
+    }
+
+    private void copyToClipboard(String text) {
+        if (!text.equals("Not available")) {
+            Clipboard clipboard = Clipboard.getSystemClipboard();
+            ClipboardContent content = new ClipboardContent();
+            content.putString(text);
+            clipboard.setContent(content);
+            showAlert("Copied", "Code copied to clipboard!");
+        }
+    }
+
+    private void importFile() {
+        if (isViewer) {
+            showAlert("Import Error", "Viewers cannot import files");
+            return;
+        }
+
+        FileChooser fileChooser = new FileChooser();
+
+        fileChooser.getExtensionFilters().addAll(
+                new FileChooser.ExtensionFilter("Text Files", "*.txt"),
+                new FileChooser.ExtensionFilter("All Files", "*.*"));
+
+        File file = fileChooser.showOpenDialog(primaryStage);
+
+        if (file != null) {
+            // Confirm with user if document isn't empty
+            if (!textArea.getText().isEmpty()) {
+                Alert alert = new Alert(
+                        Alert.AlertType.CONFIRMATION,
+                        "Importing will replace current document. Continue?",
+                        ButtonType.YES,
+                        ButtonType.NO);
+
+                alert.showAndWait().ifPresent(response -> {
+                    if (response == ButtonType.YES) {
+                        performImport(file);
+                    }
+                });
+            } else {
+                performImport(file);
+            }
+        }
+    }
+
+    private void performImport(File file) {
+        try {
+            // Read file with proper line ending handling
+            String content = new String(Files.readAllBytes(file.toPath()));
+
+            content = content.replace("\r\n", "\n"); // Normalize line endings
+
+            if (clientSocket != null && clientSocket.isConnected() && currentDocumentId != null
+                    && !currentDocumentId.isEmpty()) {
+
+                crdtController.setImportedText(content);
+                textArea.setText(crdtController.renderText());
+
+                statusLabel.setText("File imported and synchronized with collaborators");
+            } else {
+                showAlert("Import Error", "Not connected to a document");
+            }
+        } catch (IOException e) {
+            showAlert("Import Error", "Failed to read file: " + e.getMessage());
+        }
     }
 
     private void exportFile() {
         FileChooser fileChooser = new FileChooser();
-        fileChooser.setTitle("Export Document");
         fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Text Files", "*.txt"));
         File file = fileChooser.showSaveDialog(primaryStage);
-
         if (file != null) {
-            if (file.exists()) {
-                Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
-                confirm.setTitle("Overwrite File");
-                confirm.setHeaderText("The file already exists.");
-                confirm.setContentText("Do you want to overwrite it?");
-                confirm.getButtonTypes().setAll(ButtonType.YES, ButtonType.NO);
-
-                confirm.showAndWait();
-                if (confirm.getResult() != ButtonType.YES) {
-                    return;
-                }
-            }
-
             try (BufferedWriter writer = new BufferedWriter(new FileWriter(file))) {
                 writer.write(textArea.getText());
-                showAlertInfo("Success", "File saved successfully!");
+                showAlert("Exported", "Document saved successfully!");
             } catch (IOException e) {
-                showAlert("Error saving file: " + e.getMessage());
+                showAlert("Export Error", "Failed to save file: " + e.getMessage());
             }
         }
     }
 
-    private void showAlertInfo(String title, String message) {
+    private void showAlert(String title, String message) {
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
         alert.setTitle(title);
         alert.setHeaderText(null);
@@ -420,97 +601,13 @@ public class EditorUI {
         alert.showAndWait();
     }
 
-    // ──────────────────────────────── Utility ────────────────────────────────
-    private void showNotification(String message) {
-        System.out.println(message);
-    }
-
     private void showAlert(String message) {
         Alert alert = new Alert(Alert.AlertType.ERROR);
         alert.setTitle("Error");
+        alert.setHeaderText(null);
         alert.setContentText(message);
         alert.showAndWait();
     }
-
-    private void copyToClipboard(String text) {
-        Clipboard clipboard = Clipboard.getSystemClipboard();
-        ClipboardContent content = new ClipboardContent();
-        content.putString(text);
-        clipboard.setContent(content);
-        showNotification("Copied to clipboard!");
-    }
-
-    // ──────────────────────────────── Remote Cursor & User List
-    // ────────────────────────────────
-    public void addRemoteCursor(String userId, int position) {
-        Platform.runLater(() -> {
-            remoteCursors.put(userId, new UserCaret(position));
-            updateRemoteCursors();
-            updateUserList();
-        });
-    }
-
-    public void removeRemoteCursor(String userId) {
-        Platform.runLater(() -> {
-            remoteCursors.remove(userId);
-            updateUserList();
-        });
-    }
-
-    private void updateRemoteCursors() {
-        // TODO: Update the remote cursors in the text area
-
-    }
-
-    private void updateUserList() {
-        userListBox.getChildren().clear();
-        Label youLabel = new Label(currentUser + " (you)");
-        youLabel.setTextFill(Color.DARKGREEN);
-        userListBox.getChildren().add(new HBox(5, youLabel));
-
-        remoteCursors.forEach((userId, caret) -> {
-            int line = getLineNumber(caret.getPosition());
-            Label label = new Label(userId + " - line " + line);
-            userListBox.getChildren().add(new HBox(5, label)); // Add a space between the label and the caret position
-        });
-    }
-
-    private int getLineNumber(int position) {
-        String text = textArea.getText(); // Get the all text from the TextArea
-        position = Math.min(position, text.length()); // Ensure position is within bounds
-        return (int) text.substring(0, position).chars().filter(ch -> ch == '\n').count() + 1; // Count the number of
-        // newlines before the
-        // position
-    }
-
-    // ──────────────────────────────── Text Updates & Codes
-    // ────────────────────────────────
-    public void updateText(String newText, boolean preserveCaret) {
-        Platform.runLater(() -> {
-            int caretPosition = textArea.getCaretPosition();
-            textArea.setText(newText);
-            if (preserveCaret) {
-                textArea.positionCaret(Math.min(caretPosition, newText.length()));
-            }
-        });
-    }
-
-    public String getText() {
-        return textArea.getText();
-    }
-
-    public void setViewerCode(String code) {
-        this.viewerCode = code;
-        Platform.runLater(() -> viewerCodeLabel.setText(code));
-    }
-
-    public void setEditorCode(String code) {
-        this.editorCode = code;
-        Platform.runLater(() -> editorCodeLabel.setText(code));
-    }
-
-    // ──────────────────────────────── Client Socket Callbacks
-    // ────────────────────────────────
 
     public static class UserCaret {
 
